@@ -1,0 +1,5 @@
+description = 'AgentsGraph :: Layer 4 - Status & Trace Store (execution events, audit, telemetry)'
+
+dependencies {
+    api project(':context')
+}

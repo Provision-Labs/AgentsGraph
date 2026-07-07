@@ -1,0 +1,9 @@
+description = 'AgentsGraph :: Layer 3 - Runtime Orchestrator (Node -> Edge execution engine)'
+
+dependencies {
+    api project(':config')
+    api project(':context')
+    implementation project(':trace')
+
+    implementation "org.slf4j:slf4j-api:${rootProject.ext.slf4jVersion}"
+}

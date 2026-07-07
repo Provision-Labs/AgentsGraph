@@ -1,0 +1,5 @@
+description = 'AgentsGraph :: Layer 2 - Execution Context (immutable state container)'
+
+dependencies {
+    // Pure data model, no dependencies on other layers.
+}

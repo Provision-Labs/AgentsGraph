@@ -1,0 +1,47 @@
+// Root aggregator project: no sources of its own. Common conventions for every layer module
+// (Config Store, Execution Context, Runtime Orchestrator, Trace Store, Control Plane) and the
+// agentsgraph-core facade live here so each module's build.gradle only declares its own
+// module-to-module dependencies.
+
+allprojects {
+    group = 'com.provisionlabs'
+    version = '0.1.0-SNAPSHOT'
+}
+
+ext {
+    jacksonVersion = '2.15.4'
+    slf4jVersion = '2.0.13'
+    junitVersion = '5.10.2'
+    assertjVersion = '3.25.3'
+}
+
+subprojects {
+    apply plugin: 'java-library'
+
+    // Module directories/project names stay short (context, config, engine, ...); published
+    // jars are still named agentsgraph-<module> so they're unambiguous on a classpath.
+    archivesBaseName = "agentsgraph-${project.name}"
+
+    java {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        testImplementation "org.junit.jupiter:junit-jupiter:${rootProject.ext.junitVersion}"
+        testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+        testImplementation "org.assertj:assertj-core:${rootProject.ext.assertjVersion}"
+    }
+
+    test {
+        useJUnitPlatform()
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+    }
+}

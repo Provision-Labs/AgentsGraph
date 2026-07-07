@@ -1,0 +1,9 @@
+description = 'AgentsGraph :: Core facade wiring all five layers together'
+
+dependencies {
+    api project(':config')
+    api project(':context')
+    api project(':engine')
+    api project(':trace')
+    api project(':control')
+}

@@ -1,0 +1,8 @@
+rootProject.name = 'agentsgraph-parent'
+
+include 'context'
+include 'config'
+include 'trace'
+include 'engine'
+include 'control'
+include 'core'
