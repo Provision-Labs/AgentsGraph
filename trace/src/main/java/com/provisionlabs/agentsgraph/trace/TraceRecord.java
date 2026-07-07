@@ -59,4 +59,13 @@ public final class TraceRecord {
         auditLog.add(event);
         telemetry.incrementStepCount();
     }
+
+    /**
+     * Adds previously-recorded events to the audit log without touching telemetry counters, for
+     * store implementations (e.g. {@code JdbcTraceStore}) reconstructing a record whose counters
+     * already come from a persisted row.
+     */
+    public void restoreAuditLog(List<ExecutionEvent> events) {
+        auditLog.addAll(events);
+    }
 }

@@ -3,4 +3,5 @@ description = 'AgentsGraph :: Layer 5 - Control Plane & Analytics (query, replay
 dependencies {
     api project(':trace')
     api project(':context')
+    api project(':config')
 }

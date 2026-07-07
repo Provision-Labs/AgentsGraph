@@ -1,5 +1,7 @@
 package com.provisionlabs.agentsgraph.config;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -20,5 +22,10 @@ public final class InMemoryConfigStore implements ConfigStore {
     @Override
     public Optional<GraphDefinition> findGraph(String graphId) {
         return Optional.ofNullable(graphs.get(graphId));
+    }
+
+    @Override
+    public List<GraphDefinition> findAll() {
+        return new ArrayList<>(graphs.values());
     }
 }

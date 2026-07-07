@@ -4,16 +4,19 @@ import com.provisionlabs.agentsgraph.context.ExecutionContext;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
-/** Outcome of executing an {@link Edge}: the updated context plus the tags it wants recorded. */
+/** Outcome of executing an {@link Edge}: the updated context, tags, and any saved outputs. */
 public final class EdgeResult {
 
     private final ExecutionContext updatedContext;
     private final List<String> tagsAdded;
+    private final Map<String, Object> savedOutputs;
 
-    public EdgeResult(ExecutionContext updatedContext, List<String> tagsAdded) {
+    public EdgeResult(ExecutionContext updatedContext, List<String> tagsAdded, Map<String, Object> savedOutputs) {
         this.updatedContext = updatedContext;
         this.tagsAdded = tagsAdded == null ? Collections.emptyList() : tagsAdded;
+        this.savedOutputs = savedOutputs == null ? Collections.emptyMap() : savedOutputs;
     }
 
     public ExecutionContext getUpdatedContext() {
@@ -22,5 +25,10 @@ public final class EdgeResult {
 
     public List<String> getTagsAdded() {
         return tagsAdded;
+    }
+
+    /** Union of each step's {@code outputToSave}-selected fields, for a caller-supplied {@link OutputSink}. */
+    public Map<String, Object> getSavedOutputs() {
+        return savedOutputs;
     }
 }

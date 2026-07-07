@@ -53,11 +53,11 @@ architecture above. Each layer lives in its own module so it can be depended on 
 | Module | Layer | Description | Depends on |
 |---|---|---|---|
 | `context` | Execution Context | Immutable `ExecutionContext` snapshot flowing through the graph: `flow_id`/`trace_id`/`parent_id`, `input_data`, `accumulated_state`, metadata, and schema version. | — |
-| `config` | Config Store | Declarative registry: `NodeDefinition`, `EdgeDefinition`, `GraphDefinition`, routing tables/delegates, and the `ConfigStore` abstraction (with an in-memory reference implementation). | — |
-| `trace` | Status & Trace Store | Execution audit log (`ExecutionEvent`, `TraceRecord`), lifecycle status, dynamic tags and telemetry counters, plus the `TraceStore` abstraction. | `context` |
-| `engine` | Runtime Orchestrator | The Node → Edge execution engine (`RuntimeOrchestrator`, `Node`, `Edge`, `ConditionEngine`, `ProcessorRegistry`, `RoutingDelegateRegistry`) mapping the Observe → Plan → Act → Reflect loop onto graph evaluation. | `config`, `context`, `trace` |
-| `control` | Control Plane & Analytics | Query/replay API (`ControlPlane`) built on top of the trace store, backing `GET /executions` and replay/debug use cases. | `trace`, `context` |
-| `core` | Facade | `AgentsGraphEngine` — a single entry point that deploys graphs, registers processors/delegates and runs flows across all five layers. | all of the above |
+| `config` | Config Store | Declarative registry: `NodeDefinition`, `EdgeDefinition`, `GraphDefinition`, `ProcessorDefinition`, routing tables/delegates, and the `ConfigStore`/`ProcessorDefinitionStore` abstractions, with in-memory, JSON (`config.json`) and JDBC (`config.jdbc`) implementations. | — |
+| `trace` | Status & Trace Store | Execution audit log (`ExecutionEvent`, `TraceRecord`), lifecycle status, dynamic tags and telemetry counters, plus the `TraceStore` abstraction with in-memory and JDBC (`trace.jdbc`) implementations. | `context` |
+| `engine` | Runtime Orchestrator | The Node → Edge execution engine (`RuntimeOrchestrator`, `Node`, `Edge`, `ConditionEngine`, `ProcessorRegistry`, `ProcessorLoader`, `RoutingDelegateRegistry`, `OutputSink`) mapping the Observe → Plan → Act → Reflect loop onto graph evaluation, with sync and async execution. | `config`, `context`, `trace` |
+| `control` | Control Plane & Analytics | Query/replay API (`ControlPlane`) built on top of the trace store, backing `GET /executions` and replay/debug use cases, plus `GraphClassifier`/`TemplateGraphClassifier` for picking which graph should handle a given input. | `trace`, `context`, `config` |
+| `core` | Facade | `AgentsGraphEngine` — a single entry point that deploys graphs, loads processors, runs flows (sync/async) and classifies inputs across all five layers. | all of the above |
 
 Build with the bundled wrapper — no local Gradle install required:
 
@@ -67,6 +67,58 @@ gradlew.bat build     # Windows
 ```
 
 Requires JDK 11+.
+
+## 🔌 Pipeline Config & Processor Loading
+
+`config`'s `json` and `jdbc` sub-packages let AgentsGraph load pipelines from the exact JSON/DB
+shape used by legacy pipeline systems (e.g. a `plb_pipeline_config` / `plb_pipeline_processor`
+schema), so existing pipeline data can be adopted without a rewrite:
+
+- **`PipelineJsonMapper`** parses a flat pipeline JSON document (`{id, name, templates, steps: [{processorId, params, outputToNext, outputToSave}]}`)
+  into a `GraphDefinition` (one `Node` unconditionally routed to one `Edge` carrying the step
+  list), and serializes it back. It also (de)serializes `ProcessorDefinition`s, accepting `params`
+  as either a nested JSON object or a raw JSON string (as stored in a `TEXT` column).
+- **`JdbcConfigStore`** / **`JdbcProcessorDefinitionStore`** (`config.jdbc`) and **`JdbcTraceStore`**
+  (`trace.jdbc`) are `DataSource`-based implementations of `ConfigStore`, `ProcessorDefinitionStore`
+  and `TraceStore` — the same interfaces the in-memory reference implementations satisfy — so a
+  deployment can back the framework onto Postgres (or any JDBC database) instead of memory without
+  touching engine code. `JdbcTraceStore` persists status/tags/telemetry durably; the full per-node
+  context-snapshot audit log stays in an in-process cache (see its Javadoc for the rationale).
+- **`ProcessorLoader`** (`engine`) reflectively instantiates each `ProcessorDefinition`'s
+  `instanceClass` via its no-arg constructor, calls `Processor.init(params)`, and registers it
+  into a `ProcessorRegistry` — mirroring how a legacy pipeline turns `plb_pipeline_processor` rows
+  into live processor instances. Failures are isolated per-processor rather than aborting the
+  whole batch. `ProcessorHealthMonitor` reports liveness for processors flagged `is_external`.
+- **`outputToNext` / `outputToSave`** on each `StepDefinition` control per-step data flow inside an
+  `Edge`: `outputToNext` threads selected keys into the next step (empty/absent forwards
+  everything); `outputToSave` is opt-in and collects keys into `EdgeResult.getSavedOutputs()` for
+  an `OutputSink` (`NoopOutputSink` by default, `InMemoryOutputSink` for tests/inspection),
+  independent of what continues down the pipeline.
+
+## ⚡ Synchronous & Asynchronous Execution
+
+`RuntimeOrchestrator.run(graphId, context)` executes a flow synchronously; `runAsync(graphId,
+context[, executor])` returns a `CompletableFuture<ExecutionContext>` on a configurable
+`Executor` (defaulting to `ForkJoinPool.commonPool()`). Both share the same `TraceStore`, so a
+flow's live status/tags/telemetry are visible the same way regardless of which one is used.
+`AgentsGraphEngine` exposes both as `execute(...)` / `executeAsync(...)`.
+
+## 🧭 Graph Selection
+
+`control.GraphClassifier` is a small, transport-agnostic seam — `String classify(Map<String,
+Object> input)` — for picking which deployed graph should handle a given input, so an upstream
+integration doesn't need to hardcode a graph id. `TemplateGraphClassifier` is a reference
+implementation matching a graph's declared `templates` (see `GraphDefinition.getTemplates()`)
+against an input's `hasFile` flag and a short classification tag, with configurable fallback
+graph ids. `AgentsGraphEngine.createTemplateGraphClassifier(...)` wires one up over the engine's
+own `ConfigStore`.
+
+## 🗺️ Roadmap
+
+- **Chat bot integration**: `GraphClassifier` and `executeAsync` are designed as the building
+  blocks a future chat-bot front end (equivalent to a `PipelineChatBot`) would sit on top of —
+  classify a request into a graph id, run it async, and surface `TraceStore` status while it
+  runs. That integration itself is out of scope for this repository and is planned separately.
 
 ##  Routing Specification
 

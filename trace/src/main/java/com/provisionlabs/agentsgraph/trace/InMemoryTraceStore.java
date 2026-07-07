@@ -1,6 +1,7 @@
 package com.provisionlabs.agentsgraph.trace;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -20,6 +21,11 @@ public final class InMemoryTraceStore implements TraceStore {
     @Override
     public void appendEvent(String flowId, ExecutionEvent event) {
         requireRecord(flowId).appendEvent(event);
+    }
+
+    @Override
+    public void addTags(String flowId, Collection<String> tags) {
+        requireRecord(flowId).addTags(tags);
     }
 
     @Override
