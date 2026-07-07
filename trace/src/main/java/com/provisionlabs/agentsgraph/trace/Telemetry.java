@@ -32,11 +32,21 @@ public final class Telemetry {
         this.stepCount++;
     }
 
+    /** Overwrites the step count directly, e.g. when reconstructing telemetry from a stored row. */
+    public void setStepCount(int stepCount) {
+        this.stepCount = stepCount;
+    }
+
     public int getRetryAttempts() {
         return retryAttempts;
     }
 
     public void incrementRetryAttempts() {
         this.retryAttempts++;
+    }
+
+    /** Overwrites the retry count directly, e.g. when reconstructing telemetry from a stored row. */
+    public void setRetryAttempts(int retryAttempts) {
+        this.retryAttempts = retryAttempts;
     }
 }

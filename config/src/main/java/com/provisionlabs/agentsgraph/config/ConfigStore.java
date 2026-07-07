@@ -1,5 +1,6 @@
 package com.provisionlabs.agentsgraph.config;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -14,6 +15,9 @@ public interface ConfigStore {
 
     /** Looks up the latest known revision of a graph by id. */
     Optional<GraphDefinition> findGraph(String graphId);
+
+    /** Every deployed graph, e.g. for a {@link com.provisionlabs.agentsgraph.control.GraphClassifier}. */
+    List<GraphDefinition> findAll();
 
     default GraphDefinition getGraph(String graphId) {
         return findGraph(graphId)

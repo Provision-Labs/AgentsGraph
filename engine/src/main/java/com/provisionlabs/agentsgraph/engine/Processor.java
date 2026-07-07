@@ -13,4 +13,17 @@ import java.util.Map;
 public interface Processor {
 
     Map<String, Object> execute(ExecutionContext context, StepDefinition step);
+
+    /** Called once after construction, with the processor's {@code params}, before first use. */
+    default void init(Map<String, Object> params) {
+    }
+
+    /** Called on shutdown to release resources (connections, thread pools, ...). */
+    default void close() {
+    }
+
+    /** Overridden by processors backed by an external service to report reachability. */
+    default boolean isHealthy() {
+        return true;
+    }
 }

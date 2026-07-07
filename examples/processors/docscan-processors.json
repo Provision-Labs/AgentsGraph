@@ -1,0 +1,20 @@
+[
+  {
+    "id": "docscan-ocr",
+    "name": "docscan-ocr",
+    "is_external": true,
+    "instance_class": "org.webvane.pipes.DocScanOcrProcessor",
+    "params": {
+      "processUrl": "http://10.64.0.40:8109"
+    }
+  },
+  {
+    "id": "llm-postprocessor",
+    "name": "llm-postprocessor",
+    "is_external": true,
+    "instance_class": "org.webvane.pipes.LLMPostProcessor",
+    "params": {
+      "processUrl": "http://10.64.0.39:8095"
+    }
+  }
+]

@@ -1,7 +1,9 @@
 package com.provisionlabs.agentsgraph.config;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -17,6 +19,7 @@ public final class GraphDefinition {
     private final String entryNodeId;
     private final Map<String, NodeDefinition> nodes;
     private final Map<String, EdgeDefinition> edges;
+    private final List<String> templates;
 
     private GraphDefinition(Builder builder) {
         this.id = Objects.requireNonNull(builder.id, "id");
@@ -24,6 +27,7 @@ public final class GraphDefinition {
         this.entryNodeId = Objects.requireNonNull(builder.entryNodeId, "entryNodeId");
         this.nodes = Collections.unmodifiableMap(new LinkedHashMap<>(builder.nodes));
         this.edges = Collections.unmodifiableMap(new LinkedHashMap<>(builder.edges));
+        this.templates = Collections.unmodifiableList(new ArrayList<>(builder.templates));
 
         if (!nodes.containsKey(entryNodeId)) {
             throw new IllegalArgumentException("Unknown entryNodeId '" + entryNodeId + "' for graph '" + id + "'");
@@ -70,12 +74,22 @@ public final class GraphDefinition {
         return edges;
     }
 
+    /**
+     * Free-text/template tags used by a {@link com.provisionlabs.agentsgraph.control.GraphClassifier}
+     * to pick which graph should handle a given input (e.g. {@code "file:accountant"}), mirroring
+     * the legacy docscan-pipeline's per-pipeline {@code templates} list.
+     */
+    public List<String> getTemplates() {
+        return templates;
+    }
+
     public static final class Builder {
         private final String id;
         private final String version;
         private String entryNodeId;
         private final Map<String, NodeDefinition> nodes = new LinkedHashMap<>();
         private final Map<String, EdgeDefinition> edges = new LinkedHashMap<>();
+        private final List<String> templates = new ArrayList<>();
 
         private Builder(String id, String version) {
             this.id = id;
@@ -94,6 +108,16 @@ public final class GraphDefinition {
 
         public Builder edge(EdgeDefinition edge) {
             this.edges.put(edge.getId(), edge);
+            return this;
+        }
+
+        public Builder template(String template) {
+            this.templates.add(template);
+            return this;
+        }
+
+        public Builder templates(List<String> templates) {
+            this.templates.addAll(templates);
             return this;
         }
 
