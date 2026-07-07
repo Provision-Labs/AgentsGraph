@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Access point for processor definitions (the {@code plb_pipeline_processor} equivalent),
+ * Access point for processor definitions (the {@code agentsgraph_processor} equivalent),
  * storable either in memory or in a database - see {@code InMemoryProcessorDefinitionStore} and
  * the JDBC-backed implementation.
  */

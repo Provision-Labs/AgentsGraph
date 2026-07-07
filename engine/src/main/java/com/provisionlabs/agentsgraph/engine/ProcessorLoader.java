@@ -8,11 +8,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Reflectively instantiates and registers {@link Processor}s described by {@link ProcessorDefinition}s,
- * mirroring how the legacy docscan-pipeline's {@code PipelineProcessorCreator} turns
- * {@code plb_pipeline_processor} rows into live processor instances: {@code instance_class} is
- * loaded via its no-arg constructor, {@link Processor#init(Map)} is called with {@code params},
- * and the instance is registered under the definition's {@code id}.
+ * Reflectively instantiates and registers {@link Processor}s described by {@link ProcessorDefinition}s
+ * (e.g. loaded from {@code agentsgraph_processor} rows): {@code instance_class} is loaded via its
+ * no-arg constructor, {@link Processor#init(Map)} is called with {@code params}, and the instance
+ * is registered under the definition's {@code id}.
  */
 public final class ProcessorLoader {
 

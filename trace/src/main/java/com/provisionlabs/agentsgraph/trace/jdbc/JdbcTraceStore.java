@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
 
 /**
  * Database-backed {@link TraceStore} for flow status, tags and telemetry counters, using a
- * {@code plb_execution_trace} table analogous in spirit to {@code plb_pipeline_config} - one row
+ * {@code agentsgraph_execution_trace} table analogous in spirit to {@code agentsgraph_graph_config} - one row
  * per flow, tags stored as a delimited string for simple substring-based filtering.
  *
  * <p><b>Scope note:</b> unlike {@link com.provisionlabs.agentsgraph.trace.InMemoryTraceStore}, the
@@ -49,12 +49,12 @@ public final class JdbcTraceStore implements TraceStore {
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
     }
 
-    /** Creates the {@code plb_execution_trace} table if it doesn't already exist. */
+    /** Creates the {@code agentsgraph_execution_trace} table if it doesn't already exist. */
     public static void createSchema(DataSource dataSource) {
         try (Connection connection = dataSource.getConnection();
              Statement statement = connection.createStatement()) {
             statement.execute(
-                    "CREATE TABLE IF NOT EXISTS plb_execution_trace (" +
+                    "CREATE TABLE IF NOT EXISTS agentsgraph_execution_trace (" +
                             "flow_id VARCHAR(128) PRIMARY KEY, " +
                             "tenant_id VARCHAR(128), " +
                             "status VARCHAR(32) NOT NULL, " +
@@ -64,7 +64,7 @@ public final class JdbcTraceStore implements TraceStore {
                             "duration_ms BIGINT DEFAULT 0, " +
                             "retry_attempts INT DEFAULT 0)");
         } catch (SQLException e) {
-            throw new IllegalStateException("Failed to create plb_execution_trace schema", e);
+            throw new IllegalStateException("Failed to create agentsgraph_execution_trace schema", e);
         }
     }
 
@@ -72,7 +72,7 @@ public final class JdbcTraceStore implements TraceStore {
     public TraceRecord startFlow(String flowId, String tenantId) {
         try (Connection connection = dataSource.getConnection();
              PreparedStatement insert = connection.prepareStatement(
-                     "INSERT INTO plb_execution_trace (flow_id, tenant_id, status, tags) VALUES (?, ?, ?, ?)")) {
+                     "INSERT INTO agentsgraph_execution_trace (flow_id, tenant_id, status, tags) VALUES (?, ?, ?, ?)")) {
             insert.setString(1, flowId);
             insert.setString(2, tenantId);
             insert.setString(3, ExecutionStatus.RUNNING.name());
@@ -90,7 +90,7 @@ public final class JdbcTraceStore implements TraceStore {
         auditLogCache.computeIfAbsent(flowId, id -> new CopyOnWriteArrayList<>()).add(event);
         try (Connection connection = dataSource.getConnection();
              PreparedStatement update = connection.prepareStatement(
-                     "UPDATE plb_execution_trace SET step_count = step_count + 1 WHERE flow_id = ?")) {
+                     "UPDATE agentsgraph_execution_trace SET step_count = step_count + 1 WHERE flow_id = ?")) {
             update.setString(1, flowId);
             requireRow(update.executeUpdate(), flowId);
         } catch (SQLException e) {
@@ -107,7 +107,7 @@ public final class JdbcTraceStore implements TraceStore {
             Set<String> merged = new LinkedHashSet<>(readTags(connection, flowId));
             merged.addAll(tags);
             try (PreparedStatement update = connection.prepareStatement(
-                    "UPDATE plb_execution_trace SET tags = ? WHERE flow_id = ?")) {
+                    "UPDATE agentsgraph_execution_trace SET tags = ? WHERE flow_id = ?")) {
                 update.setString(1, String.join(TAG_DELIMITER, merged));
                 update.setString(2, flowId);
                 requireRow(update.executeUpdate(), flowId);
@@ -121,7 +121,7 @@ public final class JdbcTraceStore implements TraceStore {
     public void updateStatus(String flowId, ExecutionStatus status) {
         try (Connection connection = dataSource.getConnection();
              PreparedStatement update = connection.prepareStatement(
-                     "UPDATE plb_execution_trace SET status = ? WHERE flow_id = ?")) {
+                     "UPDATE agentsgraph_execution_trace SET status = ? WHERE flow_id = ?")) {
             update.setString(1, status.name());
             update.setString(2, flowId);
             requireRow(update.executeUpdate(), flowId);
@@ -135,7 +135,7 @@ public final class JdbcTraceStore implements TraceStore {
         try (Connection connection = dataSource.getConnection();
              PreparedStatement select = connection.prepareStatement(
                      "SELECT tenant_id, status, tags, step_count, token_cost, duration_ms, retry_attempts " +
-                             "FROM plb_execution_trace WHERE flow_id = ?")) {
+                             "FROM agentsgraph_execution_trace WHERE flow_id = ?")) {
             select.setString(1, flowId);
             try (ResultSet rs = select.executeQuery()) {
                 if (!rs.next()) {
@@ -158,7 +158,7 @@ public final class JdbcTraceStore implements TraceStore {
 
     @Override
     public List<TraceRecord> query(Set<String> tags, ExecutionStatus status, String tenantId) {
-        StringBuilder sql = new StringBuilder("SELECT flow_id FROM plb_execution_trace WHERE 1 = 1");
+        StringBuilder sql = new StringBuilder("SELECT flow_id FROM agentsgraph_execution_trace WHERE 1 = 1");
         List<Object> params = new ArrayList<>();
         if (status != null) {
             sql.append(" AND status = ?");
@@ -193,7 +193,7 @@ public final class JdbcTraceStore implements TraceStore {
 
     private Set<String> readTags(Connection connection, String flowId) throws SQLException {
         try (PreparedStatement select = connection.prepareStatement(
-                "SELECT tags FROM plb_execution_trace WHERE flow_id = ?")) {
+                "SELECT tags FROM agentsgraph_execution_trace WHERE flow_id = ?")) {
             select.setString(1, flowId);
             try (ResultSet rs = select.executeQuery()) {
                 if (!rs.next()) {

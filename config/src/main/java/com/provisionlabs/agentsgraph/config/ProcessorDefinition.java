@@ -5,11 +5,11 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Declarative description of a processor registered in the {@code processor_registry}, mirroring
- * the {@code plb_pipeline_processor} table of the legacy docscan-pipeline: an id/name, whether it
- * calls out to an external service ({@code is_external}, used for health-check scheduling), the
- * fully-qualified class implementing {@link com.provisionlabs.agentsgraph.engine.Processor} to
- * instantiate via reflection, and its init-time params (e.g. a {@code processUrl}).
+ * Declarative description of a processor registered in the {@code processor_registry} (see the
+ * {@code agentsgraph_processor} table): an id/name, whether it calls out to an external service
+ * ({@code is_external}, used for health-check scheduling), the fully-qualified class implementing
+ * {@link com.provisionlabs.agentsgraph.engine.Processor} to instantiate via reflection, and its
+ * init-time params (e.g. a {@code processUrl}).
  */
 public final class ProcessorDefinition {
 

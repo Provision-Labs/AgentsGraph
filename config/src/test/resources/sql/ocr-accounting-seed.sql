@@ -1,13 +1,13 @@
 -- H2-compatible seed data for tests, mirroring examples/sql/docscan-seed-data.sql (Postgres) but
 -- with literal timestamps instead of EXTRACT(EPOCH FROM NOW()) for portability.
 
-INSERT INTO plb_pipeline_processor (id, name, is_external, instance_class, params) VALUES
+INSERT INTO agentsgraph_processor (id, name, is_external, instance_class, params) VALUES
     ('docscan-ocr', 'docscan-ocr', true, 'org.webvane.pipes.DocScanOcrProcessor',
      '{"processUrl": "http://10.64.0.40:8109"}'),
     ('llm-postprocessor', 'llm-postprocessor', true, 'org.webvane.pipes.LLMPostProcessor',
      '{"processUrl": "http://10.64.0.39:8095"}');
 
-INSERT INTO plb_pipeline_config (id, name, description, config, created_at, updated_at) VALUES
+INSERT INTO agentsgraph_graph_config (id, name, description, config, created_at, updated_at) VALUES
     ('ocr-accounting', 'OCR for accounting', 'Обработка первички для бухгалтерии', '{
   "id": "ocr-accounting",
   "version": "v1",

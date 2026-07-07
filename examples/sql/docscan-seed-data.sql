@@ -1,15 +1,15 @@
 -- Seeds a real docscan-style deployment with the OCR-accounting graph (examples/graphs/ocr-accounting.json)
 -- and its two processors (examples/processors/docscan-processors.json). Run docscan-schema.sql first.
 
-DELETE FROM plb_pipeline_processor;
-INSERT INTO plb_pipeline_processor (id, name, is_external, instance_class, params) VALUES
+DELETE FROM agentsgraph_processor;
+INSERT INTO agentsgraph_processor (id, name, is_external, instance_class, params) VALUES
     ('docscan-ocr', 'docscan-ocr', true, 'org.webvane.pipes.DocScanOcrProcessor',
      '{"processUrl": "http://10.64.0.40:8109"}'),
     ('llm-postprocessor', 'llm-postprocessor', true, 'org.webvane.pipes.LLMPostProcessor',
      '{"processUrl": "http://10.64.0.39:8095"}');
 
-DELETE FROM plb_pipeline_config;
-INSERT INTO plb_pipeline_config (id, name, description, config, created_at, updated_at) VALUES
+DELETE FROM agentsgraph_graph_config;
+INSERT INTO agentsgraph_graph_config (id, name, description, config, created_at, updated_at) VALUES
     ('ocr-accounting', 'OCR for accounting', 'Обработка первички для бухгалтерии', '{
   "id": "ocr-accounting",
   "version": "v1",

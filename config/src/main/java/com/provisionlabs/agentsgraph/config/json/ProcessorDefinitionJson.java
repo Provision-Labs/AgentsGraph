@@ -3,7 +3,7 @@ package com.provisionlabs.agentsgraph.config.json;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * Jackson-friendly mirror of a {@code plb_pipeline_processor} row: {@code params} is accepted as
+ * Jackson-friendly mirror of a {@code agentsgraph_processor} row: {@code params} is accepted as
  * either a nested JSON object or a raw JSON string (as it is stored in the legacy {@code TEXT}
  * database column), see {@link ProcessorJsonMapper#toProcessorDefinition}.
  */

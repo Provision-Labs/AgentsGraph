@@ -12,7 +12,7 @@ class ProcessorJsonMapperTest {
 
     @Test
     void parsesProcessorDefinitionsWithParamsAsRawJsonString() {
-        // Mirrors a plb_pipeline_processor row where the "params" TEXT column holds a JSON string.
+        // Mirrors an agentsgraph_processor row where the "params" TEXT column holds a JSON string.
         String json = "[" +
                 "{\"id\":\"docscan-ocr\",\"name\":\"docscan-ocr\",\"is_external\":true," +
                 "\"instance_class\":\"org.webvane.pipes.DocScanOcrProcessor\"," +
