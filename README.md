@@ -9,8 +9,7 @@ flowchart TD
     B --> C["3️⃣ Runtime Orchestrator<br/>(Node → Edge Engine)"]
     C --> D["4️⃣ Status & Trace Store<br/>(Time-Series + Tags)"]
     D --> E["5️⃣ Control Plane & Analytics<br/>(Query • Replay • Dashboards)"]
-
-
+```
 ### 🔹 Layer Breakdown
 
 **1️⃣ Config Store (Declarative Registry)**  
