@@ -44,7 +44,48 @@ Operational interfaces built on top of the trace store.
 - 🔄 **Replay & Debug**: `POST /replay?flow_id=exec_123&from_node=validator`
 - 📈 **Dashboards**: Conversion rates, P95 latency, routing distribution, cost tracking
 
+##  Routing Specification
+
+AgentsGraph supports two routing strategies per Node: **Declarative Rules** and **Abstract Delegates**. This enables mixing deterministic business logic with external AI/ML services while maintaining strict control, validation, and fallback safety.
+
+### 🔹 Routing Strategies
+
+| Strategy | Type | Use Case | Config Key |
+|:---|:---|:---|:---|
+| `rules` | Declarative | Simple conditions, deterministic routing, rule-based engines | `routing_table` |
+| `classifier` | Delegated | External ML models, complex Java services, Human-in-the-loop, LLM routers | `routing_delegate` |
+
 ---
+
+###  Classificator Configuration
+
+When `routing_strategy: "classificator"`, the Node delegates decision-making to an external module. The runtime enforces strict contracts, validates outputs against graph topology, and guarantees fallback paths.
+
+```json
+{
+  "id": "smart_intent_router",
+  "type": "classifier",
+  "routing_strategy": "classificator",
+  
+  "routing_delegate": {
+    "type": "model_service",
+    "ref": "llm_intent_classifier_v4",
+    "params": {
+      "temperature": 0.1,
+      "allowed_edges": ["edge_support", "edge_sales", "edge_billing"]
+    },
+    "timeout_ms": 3000
+  },
+
+  "output_mapping": {
+    "delegate_result.edge_id": "routing_decision.next_edge",
+    "delegate_result.confidence": "routing_decision.confidence"
+  },
+
+  "fallback_edge_id": "pipe_error_handler"
+}
+
+```
 
 ### 🔄 Mapping to the Agent Loop
 
