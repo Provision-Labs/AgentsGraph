@@ -44,6 +44,30 @@ Operational interfaces built on top of the trace store.
 - 🔄 **Replay & Debug**: `POST /replay?flow_id=exec_123&from_node=validator`
 - 📈 **Dashboards**: Conversion rates, P95 latency, routing distribution, cost tracking
 
+## 🧩 Project Modules
+
+This repository is a multi-module Gradle 7 project (`agentsgraph-parent`) mirroring the 5-layer
+architecture above. Each layer lives in its own module so it can be depended on independently;
+`core` wires everything together with sane in-memory defaults.
+
+| Module | Layer | Description | Depends on |
+|---|---|---|---|
+| `context` | Execution Context | Immutable `ExecutionContext` snapshot flowing through the graph: `flow_id`/`trace_id`/`parent_id`, `input_data`, `accumulated_state`, metadata, and schema version. | — |
+| `config` | Config Store | Declarative registry: `NodeDefinition`, `EdgeDefinition`, `GraphDefinition`, routing tables/delegates, and the `ConfigStore` abstraction (with an in-memory reference implementation). | — |
+| `trace` | Status & Trace Store | Execution audit log (`ExecutionEvent`, `TraceRecord`), lifecycle status, dynamic tags and telemetry counters, plus the `TraceStore` abstraction. | `context` |
+| `engine` | Runtime Orchestrator | The Node → Edge execution engine (`RuntimeOrchestrator`, `Node`, `Edge`, `ConditionEngine`, `ProcessorRegistry`, `RoutingDelegateRegistry`) mapping the Observe → Plan → Act → Reflect loop onto graph evaluation. | `config`, `context`, `trace` |
+| `control` | Control Plane & Analytics | Query/replay API (`ControlPlane`) built on top of the trace store, backing `GET /executions` and replay/debug use cases. | `trace`, `context` |
+| `core` | Facade | `AgentsGraphEngine` — a single entry point that deploys graphs, registers processors/delegates and runs flows across all five layers. | all of the above |
+
+Build with the bundled wrapper — no local Gradle install required:
+
+```bash
+./gradlew build      # Unix/macOS
+gradlew.bat build     # Windows
+```
+
+Requires JDK 11+.
+
 ##  Routing Specification
 
 AgentsGraph supports two routing strategies per Node: **Declarative Rules** and **Abstract Delegates**. This enables mixing deterministic business logic with external AI/ML services while maintaining strict control, validation, and fallback safety.
