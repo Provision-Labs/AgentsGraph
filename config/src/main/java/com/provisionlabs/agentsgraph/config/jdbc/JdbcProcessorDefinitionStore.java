@@ -2,7 +2,7 @@ package com.provisionlabs.agentsgraph.config.jdbc;
 
 import com.provisionlabs.agentsgraph.config.ProcessorDefinition;
 import com.provisionlabs.agentsgraph.config.ProcessorDefinitionStore;
-import com.provisionlabs.agentsgraph.config.json.PipelineJsonMapper;
+import com.provisionlabs.agentsgraph.config.json.ProcessorJsonMapper;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -45,7 +45,7 @@ public final class JdbcProcessorDefinitionStore implements ProcessorDefinitionSt
 
     @Override
     public void put(ProcessorDefinition definition) {
-        String paramsJson = PipelineJsonMapper.toParamsJson(definition.getParams());
+        String paramsJson = ProcessorJsonMapper.toParamsJson(definition.getParams());
         try (Connection connection = dataSource.getConnection()) {
             int updated;
             try (PreparedStatement update = connection.prepareStatement(
@@ -114,6 +114,6 @@ public final class JdbcProcessorDefinitionStore implements ProcessorDefinitionSt
                 rs.getString("name"),
                 rs.getBoolean("is_external"),
                 rs.getString("instance_class"),
-                PipelineJsonMapper.fromParamsJson(rs.getString("params")));
+                ProcessorJsonMapper.fromParamsJson(rs.getString("params")));
     }
 }

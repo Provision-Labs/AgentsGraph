@@ -68,30 +68,40 @@ gradlew.bat build     # Windows
 
 Requires JDK 11+.
 
-## 🔌 Pipeline Config & Processor Loading
+## 🔌 Graph Config & Processor Loading
 
-`config`'s `json` and `jdbc` sub-packages let AgentsGraph load pipelines from the exact JSON/DB
-shape used by legacy pipeline systems (e.g. a `plb_pipeline_config` / `plb_pipeline_processor`
-schema), so existing pipeline data can be adopted without a rewrite:
+A pipeline is not a separate format bolted onto the graph - it **is** a graph: a single `Node`
+unconditionally routed to a single `Edge` carrying an ordered list of steps. `config`'s `json` and
+`jdbc` sub-packages give the graph itself everything a linear pipeline needs, in the framework's
+own native JSON dialect (see [`examples/graphs/ocr-accounting.json`](examples/graphs/ocr-accounting.json)
+for a full pipeline example and [`examples/graphs/smart-intent-router.json`](examples/graphs/smart-intent-router.json)
+for a branching, delegate-routed one):
 
-- **`PipelineJsonMapper`** parses a flat pipeline JSON document (`{id, name, templates, steps: [{processorId, params, outputToNext, outputToSave}]}`)
-  into a `GraphDefinition` (one `Node` unconditionally routed to one `Edge` carrying the step
-  list), and serializes it back. It also (de)serializes `ProcessorDefinition`s, accepting `params`
-  as either a nested JSON object or a raw JSON string (as stored in a `TEXT` column).
+- **`GraphJsonMapper`** (`config.json`) is the (de)serializer for the whole `GraphDefinition` -
+  nodes, edges, routing tables/delegates, input/output mappings, tags, and each step's
+  `processor_id`/`params`/`output_to_next`/`output_to_save`. There is no adapter step: whatever
+  this mapper reads is directly what the `RuntimeOrchestrator` runs.
+- **`ProcessorJsonMapper`** (`config.json`) (de)serializes `ProcessorDefinition`s - see
+  [`examples/processors/docscan-processors.json`](examples/processors/docscan-processors.json) -
+  accepting `params` as either a nested JSON object or a raw JSON string (as stored in a `TEXT`
+  column).
 - **`JdbcConfigStore`** / **`JdbcProcessorDefinitionStore`** (`config.jdbc`) and **`JdbcTraceStore`**
   (`trace.jdbc`) are `DataSource`-based implementations of `ConfigStore`, `ProcessorDefinitionStore`
   and `TraceStore` — the same interfaces the in-memory reference implementations satisfy — so a
   deployment can back the framework onto Postgres (or any JDBC database) instead of memory without
-  touching engine code. `JdbcTraceStore` persists status/tags/telemetry durably; the full per-node
-  context-snapshot audit log stays in an in-process cache (see its Javadoc for the rationale).
+  touching engine code. See [`examples/sql/docscan-schema.sql`](examples/sql/docscan-schema.sql)
+  for the reference table schema and [`examples/sql/docscan-seed-data.sql`](examples/sql/docscan-seed-data.sql)
+  for seed data loading the OCR-accounting graph; `config/src/test/resources/sql` has an
+  H2-portable copy exercised by `SqlFixtureConfigStoreTest`. `JdbcTraceStore` persists
+  status/tags/telemetry durably; the full per-node context-snapshot audit log stays in an
+  in-process cache (see its Javadoc for the rationale).
 - **`ProcessorLoader`** (`engine`) reflectively instantiates each `ProcessorDefinition`'s
   `instanceClass` via its no-arg constructor, calls `Processor.init(params)`, and registers it
-  into a `ProcessorRegistry` — mirroring how a legacy pipeline turns `plb_pipeline_processor` rows
-  into live processor instances. Failures are isolated per-processor rather than aborting the
-  whole batch. `ProcessorHealthMonitor` reports liveness for processors flagged `is_external`.
-- **`outputToNext` / `outputToSave`** on each `StepDefinition` control per-step data flow inside an
-  `Edge`: `outputToNext` threads selected keys into the next step (empty/absent forwards
-  everything); `outputToSave` is opt-in and collects keys into `EdgeResult.getSavedOutputs()` for
+  into a `ProcessorRegistry`. Failures are isolated per-processor rather than aborting the whole
+  batch. `ProcessorHealthMonitor` reports liveness for processors flagged `is_external`.
+- **`output_to_next` / `output_to_save`** on each step control per-step data flow inside an
+  `Edge`: `output_to_next` threads selected keys into the next step (empty/absent forwards
+  everything); `output_to_save` is opt-in and collects keys into `EdgeResult.getSavedOutputs()` for
   an `OutputSink` (`NoopOutputSink` by default, `InMemoryOutputSink` for tests/inspection),
   independent of what continues down the pipeline.
 

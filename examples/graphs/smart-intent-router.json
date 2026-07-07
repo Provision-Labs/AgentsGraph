@@ -1,0 +1,52 @@
+{
+  "id": "smart_intent_router",
+  "version": "v1",
+  "entry_node_id": "intent_router",
+  "nodes": [
+    {
+      "id": "intent_router",
+      "type": "classifier",
+      "routing_strategy": "classificator",
+      "routing_delegate": {
+        "type": "model_service",
+        "ref": "llm_intent_classifier_v4",
+        "params": {
+          "temperature": 0.1,
+          "allowed_edges": ["edge_support", "edge_sales", "edge_billing"]
+        },
+        "timeout_ms": 3000
+      },
+      "fallback_edge_id": "pipe_error_handler"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_support",
+      "steps": [
+        {"id": "step_support", "processor_id": "support-handler"}
+      ],
+      "tags_to_add": ["support"]
+    },
+    {
+      "id": "edge_sales",
+      "steps": [
+        {"id": "step_sales", "processor_id": "sales-handler"}
+      ],
+      "tags_to_add": ["sales"]
+    },
+    {
+      "id": "edge_billing",
+      "steps": [
+        {"id": "step_billing", "processor_id": "billing-handler"}
+      ],
+      "tags_to_add": ["billing"]
+    },
+    {
+      "id": "pipe_error_handler",
+      "steps": [
+        {"id": "step_error", "processor_id": "error-handler"}
+      ],
+      "tags_to_add": ["needs_review"]
+    }
+  ]
+}
