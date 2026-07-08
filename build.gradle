@@ -8,16 +8,30 @@ allprojects {
     version = '0.1.0-SNAPSHOT'
 }
 
+// Repository URL + credentials for `./gradlew publish` live in an untracked local.properties
+// (see local.properties.example) so they never end up in git. Missing entirely is fine for
+// everyday `build`/`test` - it only matters when the `publish` task actually runs.
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withInputStream { localProperties.load(it) }
+}
+
 ext {
     jacksonVersion = '2.15.4'
     slf4jVersion = '2.0.13'
     junitVersion = '5.10.2'
     assertjVersion = '3.25.3'
     h2Version = '2.2.224'
+
+    publishRepoUrl = localProperties.getProperty('publish.repoUrl', '')
+    publishRepoUsername = localProperties.getProperty('publish.repoUsername', '')
+    publishRepoPassword = localProperties.getProperty('publish.repoPassword', '')
 }
 
 subprojects {
     apply plugin: 'java-library'
+    apply plugin: 'maven-publish'
 
     // Module directories/project names stay short (context, config, engine, ...); published
     // jars are still named agentsgraph-<module> so they're unambiguous on a classpath.
@@ -26,6 +40,7 @@ subprojects {
     java {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        withSourcesJar()
     }
 
     repositories {
@@ -44,5 +59,26 @@ subprojects {
 
     tasks.withType(JavaCompile).configureEach {
         options.encoding = 'UTF-8'
+    }
+
+    publishing {
+        publications {
+            maven(MavenPublication) {
+                from components.java
+                groupId = project.group
+                artifactId = "agentsgraph-${project.name}"
+                version = project.version
+            }
+        }
+        repositories {
+            maven {
+                name = 'agentsgraph'
+                url = uri(rootProject.ext.publishRepoUrl)
+                credentials {
+                    username = rootProject.ext.publishRepoUsername
+                    password = rootProject.ext.publishRepoPassword
+                }
+            }
+        }
     }
 }
