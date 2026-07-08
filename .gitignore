@@ -3,3 +3,6 @@ build/
 out/
 .idea/
 *.iml
+
+# Local machine/publishing settings (repository URL + credentials) - never commit this.
+local.properties

@@ -68,6 +68,22 @@ gradlew.bat build     # Windows
 
 Requires JDK 11+.
 
+## 📦 Publishing
+
+Every module publishes as `com.provisionlabs:agentsgraph-<module>` via the `maven-publish`
+plugin (jar + sources jar). The target repository's URL and credentials are **not** committed -
+they're read from a local, gitignored `local.properties` file:
+
+```bash
+cp local.properties.example local.properties
+# then fill in publish.repoUrl / publish.repoUsername / publish.repoPassword
+./gradlew publish
+```
+
+Works with any Maven-compatible repository (GitHub Packages, Nexus, Artifactory, ...) - see
+`local.properties.example` for the exact keys and a GitHub Packages example. Without a
+`local.properties`, `./gradlew build`/`test` are unaffected; only `publish` needs it.
+
 ## 🔌 Graph Config & Processor Loading
 
 A pipeline is not a separate format bolted onto the graph - it **is** a graph: a single `Node`
