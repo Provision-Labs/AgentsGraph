@@ -70,7 +70,7 @@ Requires JDK 11+.
 
 ## 📦 Publishing
 
-Every module publishes as `com.provisionlabs:agentsgraph-<module>` via the `maven-publish`
+Every module publishes as `io.provisionlabs:agentsgraph-<module>` via the `maven-publish`
 plugin (jar + sources jar). The target repository's URL and credentials are **not** committed -
 they're read from a local, gitignored `local.properties` file:
 
