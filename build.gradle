@@ -30,6 +30,10 @@ ext {
     publishRepoUrl = localProperties.getProperty('publish.repoUrl', '')
     publishRepoUsername = localProperties.getProperty('publish.repoUsername', '')
     publishRepoPassword = localProperties.getProperty('publish.repoPassword', '')
+    // Gradle refuses to publish to a plain-http:// repository unless explicitly opted in (this
+    // is a security guard rail, not a bug) - some internal Nexus/Artifactory instances only run
+    // over http on a private network, so this is opt-in via local.properties, defaulting to false.
+    publishAllowInsecureProtocol = localProperties.getProperty('publish.allowInsecureProtocol', 'false').toBoolean()
 }
 
 subprojects {
@@ -79,6 +83,7 @@ subprojects {
             // untracked local.properties (see local.properties.example), not by anything in git.
             maven {
                 url = uri(rootProject.ext.publishRepoUrl)
+                allowInsecureProtocol = rootProject.ext.publishAllowInsecureProtocol
                 credentials {
                     username = rootProject.ext.publishRepoUsername
                     password = rootProject.ext.publishRepoPassword
