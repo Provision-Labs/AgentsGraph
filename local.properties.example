@@ -7,7 +7,13 @@
 #                       publish.repoPassword = a PAT with the write:packages scope
 #   - Nexus/Artifactory: publish.repoUrl = your repository's deploy URL,
 #                        publish.repoUsername / publish.repoPassword = your deploy credentials
+#
+# publish.allowInsecureProtocol only needs to be true if publish.repoUrl is a plain http:// URL
+# (e.g. an internal Nexus/Artifactory reachable only on a private network without TLS) - Gradle
+# otherwise refuses to publish over http:// as a safety guard rail. Leave it false/unset for any
+# https:// repository.
 
 publish.repoUrl=
 publish.repoUsername=
 publish.repoPassword=
+publish.allowInsecureProtocol=false

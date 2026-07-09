@@ -84,6 +84,11 @@ Works with any Maven-compatible repository (GitHub Packages, Nexus, Artifactory,
 `local.properties.example` for the exact keys and a GitHub Packages example. Without a
 `local.properties`, `./gradlew build`/`test` are unaffected; only `publish` needs it.
 
+Publishing to a plain `http://` repository (e.g. an internal Nexus/Artifactory only reachable
+over an unencrypted private network) additionally needs `publish.allowInsecureProtocol=true` in
+`local.properties` - Gradle otherwise refuses the publish as a safety guard rail. Leave it
+unset/false for any `https://` repository.
+
 ## 🔌 Graph Config & Processor Loading
 
 A pipeline is not a separate format bolted onto the graph - it **is** a graph: a single `Node`
