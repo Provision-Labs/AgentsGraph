@@ -5,15 +5,25 @@
 #   - GitHub Packages: publish.repoUrl = https://maven.pkg.github.com/<owner>/<repo>
 #                       publish.repoUsername = your GitHub username
 #                       publish.repoPassword = a PAT with the write:packages scope
-#   - Nexus/Artifactory: publish.repoUrl = your repository's deploy URL,
+#   - Nexus/Artifactory: publish.repoUrl = your releases repository's deploy URL, e.g.
+#                          https://nexus.example.com/repository/maven-releases/
+#                        publish.snapshotRepoUrl = your snapshots repository's deploy URL, e.g.
+#                          https://nexus.example.com/repository/maven-snapshots/
 #                        publish.repoUsername / publish.repoPassword = your deploy credentials
 #
-# publish.allowInsecureProtocol only needs to be true if publish.repoUrl is a plain http:// URL
+# publish.snapshotRepoUrl is only needed if your repository manager rejects SNAPSHOT versions in
+# the releases repo (Nexus/Artifactory "RELEASE" policy repos do, with a 400 on
+# .../maven-metadata.xml) - a project version ending in "-SNAPSHOT" (see gradle.properties)
+# publishes to publish.snapshotRepoUrl instead of publish.repoUrl. Leave it unset if your
+# repository accepts both, or if you only ever publish releases.
+#
+# publish.allowInsecureProtocol only needs to be true if either URL above is plain http://
 # (e.g. an internal Nexus/Artifactory reachable only on a private network without TLS) - Gradle
 # otherwise refuses to publish over http:// as a safety guard rail. Leave it false/unset for any
 # https:// repository.
 
 publish.repoUrl=
+publish.snapshotRepoUrl=
 publish.repoUsername=
 publish.repoPassword=
 publish.allowInsecureProtocol=false

@@ -89,6 +89,12 @@ over an unencrypted private network) additionally needs `publish.allowInsecurePr
 `local.properties` - Gradle otherwise refuses the publish as a safety guard rail. Leave it
 unset/false for any `https://` repository.
 
+The project version (see `gradle.properties`) currently ends in `-SNAPSHOT`. If your repository
+manager splits releases and snapshots into separate repositories with different policies (Nexus's
+`maven-releases` rejects SNAPSHOT versions with a 400 on `maven-metadata.xml`, for instance), set
+`publish.snapshotRepoUrl` in `local.properties` to your snapshots repository's URL - SNAPSHOT
+versions publish there instead of `publish.repoUrl` automatically.
+
 ## 🔌 Graph Config & Processor Loading
 
 A pipeline is not a separate format bolted onto the graph - it **is** a graph: a single `Node`
