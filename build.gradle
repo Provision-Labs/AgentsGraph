@@ -20,6 +20,13 @@ if (localPropertiesFile.exists()) {
     localPropertiesFile.withInputStream { localProperties.load(it) }
 }
 
+// Many repository managers (Nexus, Artifactory) host releases and snapshots in separate
+// repositories and reject the other kind - a "RELEASE" policy repo 400s on a SNAPSHOT version.
+// publish.snapshotRepoUrl defaults to publish.repoUrl so a single-repository setup (GitHub
+// Packages, a single Artifactory repo with a mixed policy, ...) needs only one URL configured.
+def releaseRepoUrl = localProperties.getProperty('publish.repoUrl', '')
+def snapshotRepoUrl = localProperties.getProperty('publish.snapshotRepoUrl', releaseRepoUrl)
+
 ext {
     jacksonVersion = rootProject.property('jacksonVersion')
     slf4jVersion = rootProject.property('slf4jVersion')
@@ -27,7 +34,8 @@ ext {
     assertjVersion = rootProject.property('assertjVersion')
     h2Version = rootProject.property('h2Version')
 
-    publishRepoUrl = localProperties.getProperty('publish.repoUrl', '')
+    publishReleaseRepoUrl = releaseRepoUrl
+    publishSnapshotRepoUrl = snapshotRepoUrl
     publishRepoUsername = localProperties.getProperty('publish.repoUsername', '')
     publishRepoPassword = localProperties.getProperty('publish.repoPassword', '')
     // Gradle refuses to publish to a plain-http:// repository unless explicitly opted in (this
@@ -79,10 +87,14 @@ subprojects {
         }
         repositories {
             // No repository name here on purpose: which repository this publishes to is entirely
-            // determined by publish.repoUrl/publish.repoUsername/publish.repoPassword in the
-            // untracked local.properties (see local.properties.example), not by anything in git.
+            // determined by publish.repoUrl/publish.snapshotRepoUrl/publish.repoUsername/
+            // publish.repoPassword in the untracked local.properties (see
+            // local.properties.example), not by anything in git. SNAPSHOT versions go to
+            // publish.snapshotRepoUrl so a release-only repository doesn't reject them.
             maven {
-                url = uri(rootProject.ext.publishRepoUrl)
+                url = uri(project.version.toString().endsWith('SNAPSHOT')
+                        ? rootProject.ext.publishSnapshotRepoUrl
+                        : rootProject.ext.publishReleaseRepoUrl)
                 allowInsecureProtocol = rootProject.ext.publishAllowInsecureProtocol
                 credentials {
                     username = rootProject.ext.publishRepoUsername
