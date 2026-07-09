@@ -2,10 +2,13 @@
 // (Config Store, Execution Context, Runtime Orchestrator, Trace Store, Control Plane) and the
 // agentsgraph-core facade live here so each module's build.gradle only declares its own
 // module-to-module dependencies.
+//
+// Project coordinates (group/version) and third-party library versions live in gradle.properties,
+// not here, so bumping a version doesn't require touching build logic.
 
 allprojects {
-    group = 'com.provisionlabs'
-    version = '0.1.0-SNAPSHOT'
+    group = rootProject.property('group')
+    version = rootProject.property('version')
 }
 
 // Repository URL + credentials for `./gradlew publish` live in an untracked local.properties
@@ -18,11 +21,11 @@ if (localPropertiesFile.exists()) {
 }
 
 ext {
-    jacksonVersion = '2.15.4'
-    slf4jVersion = '2.0.13'
-    junitVersion = '5.10.2'
-    assertjVersion = '3.25.3'
-    h2Version = '2.2.224'
+    jacksonVersion = rootProject.property('jacksonVersion')
+    slf4jVersion = rootProject.property('slf4jVersion')
+    junitVersion = rootProject.property('junitVersion')
+    assertjVersion = rootProject.property('assertjVersion')
+    h2Version = rootProject.property('h2Version')
 
     publishRepoUrl = localProperties.getProperty('publish.repoUrl', '')
     publishRepoUsername = localProperties.getProperty('publish.repoUsername', '')
@@ -71,8 +74,10 @@ subprojects {
             }
         }
         repositories {
+            // No repository name here on purpose: which repository this publishes to is entirely
+            // determined by publish.repoUrl/publish.repoUsername/publish.repoPassword in the
+            // untracked local.properties (see local.properties.example), not by anything in git.
             maven {
-                name = 'agentsgraph'
                 url = uri(rootProject.ext.publishRepoUrl)
                 credentials {
                     username = rootProject.ext.publishRepoUsername
