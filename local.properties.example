@@ -1,0 +1,13 @@
+# Copy this file to "local.properties" (already .gitignore'd - never commit the real one) and
+# fill in your Maven repository's coordinates to enable `./gradlew publish`.
+#
+# Works with any Maven-compatible repository (GitHub Packages, Nexus, Artifactory, ...):
+#   - GitHub Packages: publish.repoUrl = https://maven.pkg.github.com/<owner>/<repo>
+#                       publish.repoUsername = your GitHub username
+#                       publish.repoPassword = a PAT with the write:packages scope
+#   - Nexus/Artifactory: publish.repoUrl = your repository's deploy URL,
+#                        publish.repoUsername / publish.repoPassword = your deploy credentials
+
+publish.repoUrl=
+publish.repoUsername=
+publish.repoPassword=

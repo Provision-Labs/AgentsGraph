@@ -2,7 +2,11 @@ description = 'AgentsGraph :: Layer 1 - Config Store (declarative Node/Edge/Grap
 
 dependencies {
     // Graph topology is stored as versioned JSON; Jackson backs (de)serialization of
-    // GraphDefinition/NodeDefinition/EdgeDefinition once a JSON-backed ConfigStore is added.
+    // GraphDefinition/ProcessorDefinition (see the json and jdbc sub-packages).
     api "com.fasterxml.jackson.core:jackson-databind:${rootProject.ext.jacksonVersion}"
     api "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:${rootProject.ext.jacksonVersion}"
+
+    // JdbcConfigStore/JdbcProcessorDefinitionStore only need javax.sql.DataSource (JDK-provided);
+    // H2 here is just an in-memory database to exercise them in tests.
+    testImplementation "com.h2database:h2:${rootProject.ext.h2Version}"
 }

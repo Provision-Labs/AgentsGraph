@@ -2,21 +2,39 @@
 // (Config Store, Execution Context, Runtime Orchestrator, Trace Store, Control Plane) and the
 // agentsgraph-core facade live here so each module's build.gradle only declares its own
 // module-to-module dependencies.
+//
+// Project coordinates (group/version) and third-party library versions live in gradle.properties,
+// not here, so bumping a version doesn't require touching build logic.
 
 allprojects {
-    group = 'com.provisionlabs'
-    version = '0.1.0-SNAPSHOT'
+    group = rootProject.property('group')
+    version = rootProject.property('version')
+}
+
+// Repository URL + credentials for `./gradlew publish` live in an untracked local.properties
+// (see local.properties.example) so they never end up in git. Missing entirely is fine for
+// everyday `build`/`test` - it only matters when the `publish` task actually runs.
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withInputStream { localProperties.load(it) }
 }
 
 ext {
-    jacksonVersion = '2.15.4'
-    slf4jVersion = '2.0.13'
-    junitVersion = '5.10.2'
-    assertjVersion = '3.25.3'
+    jacksonVersion = rootProject.property('jacksonVersion')
+    slf4jVersion = rootProject.property('slf4jVersion')
+    junitVersion = rootProject.property('junitVersion')
+    assertjVersion = rootProject.property('assertjVersion')
+    h2Version = rootProject.property('h2Version')
+
+    publishRepoUrl = localProperties.getProperty('publish.repoUrl', '')
+    publishRepoUsername = localProperties.getProperty('publish.repoUsername', '')
+    publishRepoPassword = localProperties.getProperty('publish.repoPassword', '')
 }
 
 subprojects {
     apply plugin: 'java-library'
+    apply plugin: 'maven-publish'
 
     // Module directories/project names stay short (context, config, engine, ...); published
     // jars are still named agentsgraph-<module> so they're unambiguous on a classpath.
@@ -25,6 +43,7 @@ subprojects {
     java {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        withSourcesJar()
     }
 
     repositories {
@@ -43,5 +62,28 @@ subprojects {
 
     tasks.withType(JavaCompile).configureEach {
         options.encoding = 'UTF-8'
+    }
+
+    publishing {
+        publications {
+            maven(MavenPublication) {
+                from components.java
+                groupId = project.group
+                artifactId = "agentsgraph-${project.name}"
+                version = project.version
+            }
+        }
+        repositories {
+            // No repository name here on purpose: which repository this publishes to is entirely
+            // determined by publish.repoUrl/publish.repoUsername/publish.repoPassword in the
+            // untracked local.properties (see local.properties.example), not by anything in git.
+            maven {
+                url = uri(rootProject.ext.publishRepoUrl)
+                credentials {
+                    username = rootProject.ext.publishRepoUsername
+                    password = rootProject.ext.publishRepoPassword
+                }
+            }
+        }
     }
 }
