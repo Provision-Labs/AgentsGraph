@@ -3,7 +3,11 @@ package io.provisionlabs.agentsgraph;
 import io.provisionlabs.agentsgraph.config.ConfigStore;
 import io.provisionlabs.agentsgraph.config.GraphDefinition;
 import io.provisionlabs.agentsgraph.config.InMemoryConfigStore;
+import io.provisionlabs.agentsgraph.config.InMemoryProcessorDefinitionStore;
 import io.provisionlabs.agentsgraph.config.ProcessorDefinition;
+import io.provisionlabs.agentsgraph.config.ProcessorDefinitionStore;
+import io.provisionlabs.agentsgraph.config.jdbc.JdbcConfigStore;
+import io.provisionlabs.agentsgraph.config.jdbc.JdbcProcessorDefinitionStore;
 import io.provisionlabs.agentsgraph.context.ExecutionContext;
 import io.provisionlabs.agentsgraph.control.ControlPlane;
 import io.provisionlabs.agentsgraph.control.DefaultControlPlane;
@@ -21,7 +25,9 @@ import io.provisionlabs.agentsgraph.engine.RoutingDelegateRegistry;
 import io.provisionlabs.agentsgraph.engine.RuntimeOrchestrator;
 import io.provisionlabs.agentsgraph.trace.InMemoryTraceStore;
 import io.provisionlabs.agentsgraph.trace.TraceStore;
+import io.provisionlabs.agentsgraph.trace.jdbc.JdbcTraceStore;
 
+import javax.sql.DataSource;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -41,6 +47,7 @@ import java.util.concurrent.ForkJoinPool;
 public final class AgentsGraphEngine {
 
     private final ConfigStore configStore;
+    private final ProcessorDefinitionStore processorDefinitionStore;
     private final TraceStore traceStore;
     private final ProcessorRegistry processorRegistry;
     private final RoutingDelegateRegistry delegateRegistry;
@@ -59,7 +66,21 @@ public final class AgentsGraphEngine {
     public AgentsGraphEngine(ConfigStore configStore, TraceStore traceStore,
                               ProcessorRegistry processorRegistry, RoutingDelegateRegistry delegateRegistry,
                               OutputSink outputSink, Executor asyncExecutor) {
+        this(configStore, new InMemoryProcessorDefinitionStore(), traceStore, processorRegistry, delegateRegistry,
+                outputSink, asyncExecutor);
+    }
+
+    /**
+     * Full constructor, also taking the {@link ProcessorDefinitionStore} backing
+     * {@link #loadProcessorsFromStore()}. Prefer the {@link #inMemory()} / {@link #jdbc(DataSource)}
+     * factories unless you need a custom combination of stores.
+     */
+    public AgentsGraphEngine(ConfigStore configStore, ProcessorDefinitionStore processorDefinitionStore,
+                              TraceStore traceStore, ProcessorRegistry processorRegistry,
+                              RoutingDelegateRegistry delegateRegistry, OutputSink outputSink,
+                              Executor asyncExecutor) {
         this.configStore = configStore;
+        this.processorDefinitionStore = processorDefinitionStore;
         this.traceStore = traceStore;
         this.processorRegistry = processorRegistry;
         this.delegateRegistry = delegateRegistry;
@@ -72,8 +93,31 @@ public final class AgentsGraphEngine {
     /** In-memory reference stack: handy for tests and getting started, not for production durability. */
     public static AgentsGraphEngine inMemory() {
         return new AgentsGraphEngine(
-                new InMemoryConfigStore(), new InMemoryTraceStore(), new ProcessorRegistry(),
-                new RoutingDelegateRegistry(), new InMemoryOutputSink(), ForkJoinPool.commonPool());
+                new InMemoryConfigStore(), new InMemoryProcessorDefinitionStore(), new InMemoryTraceStore(),
+                new ProcessorRegistry(), new RoutingDelegateRegistry(), new InMemoryOutputSink(),
+                ForkJoinPool.commonPool());
+    }
+
+    /**
+     * JDBC-backed stack: creates the {@code agentsgraph_graph_config}, {@code agentsgraph_processor} and
+     * {@code agentsgraph_execution_trace} schemas on {@code dataSource} if they don't exist yet, and wires
+     * {@link JdbcConfigStore}/{@link JdbcProcessorDefinitionStore}/{@link JdbcTraceStore} on top of them.
+     * Intended to be wired as a Spring bean (e.g. {@code factory-method="jdbc"}) rather than built by hand
+     * in application code.
+     */
+    public static AgentsGraphEngine jdbc(DataSource dataSource) {
+        return jdbc(dataSource, NoopOutputSink.INSTANCE, ForkJoinPool.commonPool());
+    }
+
+    /** Same as {@link #jdbc(DataSource)} but with an explicit {@link OutputSink} and async {@link Executor}. */
+    public static AgentsGraphEngine jdbc(DataSource dataSource, OutputSink outputSink, Executor asyncExecutor) {
+        JdbcConfigStore.createSchema(dataSource);
+        JdbcProcessorDefinitionStore.createSchema(dataSource);
+        JdbcTraceStore.createSchema(dataSource);
+        return new AgentsGraphEngine(
+                new JdbcConfigStore(dataSource), new JdbcProcessorDefinitionStore(dataSource),
+                new JdbcTraceStore(dataSource), new ProcessorRegistry(), new RoutingDelegateRegistry(),
+                outputSink, asyncExecutor);
     }
 
     public void deployGraph(GraphDefinition graph) {
@@ -94,6 +138,36 @@ public final class AgentsGraphEngine {
         return result;
     }
 
+    /** Convenience for {@code loadProcessors(getProcessorDefinitionStore().findAll())}. */
+    public ProcessorLoader.LoadResult loadProcessorsFromStore() {
+        return loadProcessors(processorDefinitionStore.findAll());
+    }
+
+    /**
+     * Seeds {@code definitions} into the {@link ProcessorDefinitionStore} the first time it's empty
+     * (e.g. on first boot of a fresh JDBC schema), then loads them into the registry. A no-op seed if
+     * the store already has entries — existing rows always win over the bundled defaults.
+     */
+    public ProcessorLoader.LoadResult seedAndLoadProcessors(List<ProcessorDefinition> defaultDefinitions) {
+        if (defaultDefinitions != null && processorDefinitionStore.findAll().isEmpty()) {
+            for (ProcessorDefinition definition : defaultDefinitions) {
+                processorDefinitionStore.put(definition);
+            }
+        }
+        return loadProcessorsFromStore();
+    }
+
+    /**
+     * Deploys {@code graph} into the {@link ConfigStore} only if no graph with the same id is present yet
+     * (e.g. seeding a bundled graph on first boot of a fresh JDBC schema without overwriting an
+     * already-customized one).
+     */
+    public void deployGraphIfAbsent(GraphDefinition graph) {
+        if (configStore.findGraph(graph.getId()).isEmpty()) {
+            configStore.putGraph(graph);
+        }
+    }
+
     public void registerRoutingDelegate(String ref, RoutingDelegate delegate) {
         delegateRegistry.register(ref, delegate);
     }
@@ -109,6 +183,10 @@ public final class AgentsGraphEngine {
 
     public ConfigStore getConfigStore() {
         return configStore;
+    }
+
+    public ProcessorDefinitionStore getProcessorDefinitionStore() {
+        return processorDefinitionStore;
     }
 
     public TraceStore getTraceStore() {
