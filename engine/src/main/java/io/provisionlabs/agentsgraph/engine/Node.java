@@ -48,7 +48,8 @@ public final class Node {
             RoutingDelegate delegate = delegateRegistry.resolve(definition.getRoutingDelegate().getRef());
             DelegateResult result = delegate.decide(context, definition.getRoutingDelegate());
             if (result != null && result.getEdgeId() != null) {
-                return new RoutingDecision(result.getEdgeId(), result.getConfidence(), RoutingSource.DELEGATE);
+                return new RoutingDecision(
+                        result.getEdgeId(), result.getConfidence(), RoutingSource.DELEGATE, result.getRaw());
             }
             return fallbackOrThrow("routing delegate returned no edge_id");
         } catch (RuntimeException e) {
