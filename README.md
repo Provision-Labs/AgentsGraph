@@ -133,6 +133,16 @@ for a delegate-routed one):
   everything); `output_to_save` is opt-in and collects keys into `EdgeResult.getSavedOutputs()` for
   an `OutputSink` (`NoopOutputSink` by default, `InMemoryOutputSink` for tests/inspection),
   independent of what continues down the pipeline.
+- **`GraphConfigService`** (`core`) is the universal, DB-driven loader/reloader tying the above
+  together for a deployment: graph configs and processor rows live in the database (seeded by
+  plain SQL insert scripts - see `examples/sql/docscan-seed-data.sql`), and the service
+  materializes them into a runnable engine lazily on first `execute(graphId, context)` and again
+  on demand via `reload()` (a changed `agentsgraph_processor` row takes effect after a reload; a
+  changed `agentsgraph_graph_config` row takes effect on the very next execution, no reload
+  needed, since the orchestrator resolves the graph from the `ConfigStore` per run). Processors
+  that need live, injected dependencies - and therefore can't be reflectively instantiated from a
+  DB row - are passed to its constructor as a map and re-registered after every load, overriding
+  same-ref DB rows; tests reuse that same seam to overlay stub-backed processors.
 
 ## ⚡ Synchronous & Asynchronous Execution
 
