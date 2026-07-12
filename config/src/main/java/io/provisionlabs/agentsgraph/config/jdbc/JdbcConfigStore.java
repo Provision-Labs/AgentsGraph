@@ -30,8 +30,10 @@ public final class JdbcConfigStore implements ConfigStore {
 
     private final DataSource dataSource;
 
+    /** Ensures the {@code agentsgraph_graph_config} schema exists - the store owns its own storage. */
     public JdbcConfigStore(DataSource dataSource) {
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
+        createSchema(dataSource);
     }
 
     /** Creates the {@code agentsgraph_graph_config} table if it doesn't already exist. */

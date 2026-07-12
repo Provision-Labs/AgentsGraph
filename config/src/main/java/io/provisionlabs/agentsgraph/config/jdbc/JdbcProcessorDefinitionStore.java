@@ -23,8 +23,10 @@ public final class JdbcProcessorDefinitionStore implements ProcessorDefinitionSt
 
     private final DataSource dataSource;
 
+    /** Ensures the {@code agentsgraph_processor} schema exists - the store owns its own storage. */
     public JdbcProcessorDefinitionStore(DataSource dataSource) {
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
+        createSchema(dataSource);
     }
 
     /** Creates the {@code agentsgraph_processor} table if it doesn't already exist. */

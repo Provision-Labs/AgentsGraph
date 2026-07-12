@@ -1,0 +1,7 @@
+description = 'AgentsGraph :: Test harness - mock individual processors, run SQL fixtures, execute graphs without external services'
+
+dependencies {
+    api project(':core')
+
+    testImplementation "com.h2database:h2:${rootProject.ext.h2Version}"
+}
