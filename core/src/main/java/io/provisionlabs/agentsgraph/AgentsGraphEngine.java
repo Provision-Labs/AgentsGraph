@@ -6,8 +6,6 @@ import io.provisionlabs.agentsgraph.config.InMemoryConfigStore;
 import io.provisionlabs.agentsgraph.config.InMemoryProcessorDefinitionStore;
 import io.provisionlabs.agentsgraph.config.ProcessorDefinition;
 import io.provisionlabs.agentsgraph.config.ProcessorDefinitionStore;
-import io.provisionlabs.agentsgraph.config.jdbc.JdbcConfigStore;
-import io.provisionlabs.agentsgraph.config.jdbc.JdbcProcessorDefinitionStore;
 import io.provisionlabs.agentsgraph.context.ExecutionContext;
 import io.provisionlabs.agentsgraph.control.ControlPlane;
 import io.provisionlabs.agentsgraph.control.DefaultControlPlane;
@@ -25,9 +23,7 @@ import io.provisionlabs.agentsgraph.engine.RoutingDelegateRegistry;
 import io.provisionlabs.agentsgraph.engine.RuntimeOrchestrator;
 import io.provisionlabs.agentsgraph.trace.InMemoryTraceStore;
 import io.provisionlabs.agentsgraph.trace.TraceStore;
-import io.provisionlabs.agentsgraph.trace.jdbc.JdbcTraceStore;
 
-import javax.sql.DataSource;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -71,9 +67,23 @@ public final class AgentsGraphEngine {
     }
 
     /**
-     * Full constructor, also taking the {@link ProcessorDefinitionStore} backing
-     * {@link #loadProcessorsFromStore()}. Prefer the {@link #inMemory()} / {@link #jdbc(DataSource)}
-     * factories unless you need a custom combination of stores.
+     * Store-driven constructor - the recommended production shape: the engine never touches a
+     * {@code DataSource} or any other storage detail itself; where configs/processors/traces live
+     * is entirely the concern of the {@link ConfigStore}/{@link ProcessorDefinitionStore}/{@link
+     * TraceStore} implementations passed in (in-memory, JSON-backed, JDBC-backed - each JDBC store
+     * ensures its own schema on construction). Wire the three stores as beans and hand them to
+     * this constructor.
+     */
+    public AgentsGraphEngine(ConfigStore configStore, ProcessorDefinitionStore processorDefinitionStore,
+                              TraceStore traceStore) {
+        this(configStore, processorDefinitionStore, traceStore, new ProcessorRegistry(),
+                new RoutingDelegateRegistry(), NoopOutputSink.INSTANCE, ForkJoinPool.commonPool());
+    }
+
+    /**
+     * Full constructor, also taking the registries, {@link OutputSink} and async {@link Executor}.
+     * Prefer {@link #inMemory()} or the three-store constructor unless you need a custom
+     * combination.
      */
     public AgentsGraphEngine(ConfigStore configStore, ProcessorDefinitionStore processorDefinitionStore,
                               TraceStore traceStore, ProcessorRegistry processorRegistry,
@@ -96,28 +106,6 @@ public final class AgentsGraphEngine {
                 new InMemoryConfigStore(), new InMemoryProcessorDefinitionStore(), new InMemoryTraceStore(),
                 new ProcessorRegistry(), new RoutingDelegateRegistry(), new InMemoryOutputSink(),
                 ForkJoinPool.commonPool());
-    }
-
-    /**
-     * JDBC-backed stack: creates the {@code agentsgraph_graph_config}, {@code agentsgraph_processor} and
-     * {@code agentsgraph_execution_trace} schemas on {@code dataSource} if they don't exist yet, and wires
-     * {@link JdbcConfigStore}/{@link JdbcProcessorDefinitionStore}/{@link JdbcTraceStore} on top of them.
-     * Intended to be wired as a Spring bean (e.g. {@code factory-method="jdbc"}) rather than built by hand
-     * in application code.
-     */
-    public static AgentsGraphEngine jdbc(DataSource dataSource) {
-        return jdbc(dataSource, NoopOutputSink.INSTANCE, ForkJoinPool.commonPool());
-    }
-
-    /** Same as {@link #jdbc(DataSource)} but with an explicit {@link OutputSink} and async {@link Executor}. */
-    public static AgentsGraphEngine jdbc(DataSource dataSource, OutputSink outputSink, Executor asyncExecutor) {
-        JdbcConfigStore.createSchema(dataSource);
-        JdbcProcessorDefinitionStore.createSchema(dataSource);
-        JdbcTraceStore.createSchema(dataSource);
-        return new AgentsGraphEngine(
-                new JdbcConfigStore(dataSource), new JdbcProcessorDefinitionStore(dataSource),
-                new JdbcTraceStore(dataSource), new ProcessorRegistry(), new RoutingDelegateRegistry(),
-                outputSink, asyncExecutor);
     }
 
     public void deployGraph(GraphDefinition graph) {

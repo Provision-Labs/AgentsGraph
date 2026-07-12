@@ -57,7 +57,8 @@ architecture above. Each layer lives in its own module so it can be depended on 
 | `trace` | Status & Trace Store | Execution audit log (`ExecutionEvent`, `TraceRecord`), lifecycle status, dynamic tags and telemetry counters, plus the `TraceStore` abstraction with in-memory and JDBC (`trace.jdbc`) implementations. | `context` |
 | `engine` | Runtime Orchestrator | The Node → Edge execution engine (`RuntimeOrchestrator`, `Node`, `Edge`, `ConditionEngine`, `ProcessorRegistry`, `ProcessorLoader`, `RoutingDelegateRegistry`, `OutputSink`) mapping the Observe → Plan → Act → Reflect loop onto graph evaluation, with sync and async execution. | `config`, `context`, `trace` |
 | `control` | Control Plane & Analytics | Query/replay API (`ControlPlane`) built on top of the trace store, backing `GET /executions` and replay/debug use cases, plus `GraphClassifier`/`TemplateGraphClassifier` for picking which graph should handle a given input. | `trace`, `context`, `config` |
-| `core` | Facade | `AgentsGraphEngine` — a single entry point that deploys graphs, loads processors, runs flows (sync/async) and classifies inputs across all five layers. | all of the above |
+| `core` | Facade | `AgentsGraphEngine` — a single entry point that deploys graphs, loads processors, runs flows (sync/async) and classifies inputs across all five layers, plus `GraphConfigService`, the universal DB-driven loader/reloader. The engine is constructed from `ConfigStore`/`ProcessorDefinitionStore`/`TraceStore` *implementations* — it never touches a `DataSource` or any other storage detail itself; each JDBC store ensures its own schema on construction. | all of the above |
+| `test` | Test kit | `AgentsGraphTestHarness`, `MockProcessor` and `SqlScriptRunner` — run a real graph (deployed by the same SQL script production uses) with selected processors replaced by scripted mocks, so tests exercise routing/threading/fallback/tracing with zero network calls and zero AI-API token spend. | `core` |
 
 Build with the bundled wrapper — no local Gradle install required:
 
@@ -374,10 +375,29 @@ Two mock depths, chosen per test:
 Failure paths cost nothing to simulate either: simply *don't* stub a URL (the client throws →
 the edge fails → the orchestrator re-routes to `fallback_edge_id` with `pipeline_error` in the
 context), and assert on the fallback edge's output and the `needs_review` tag in the
-`TraceStore`. An `InMemoryOutputSink` and `AgentsGraphEngine.jdbc(h2DataSource)` round this out
-into a fully self-contained integration test - real engine, real stores, real processors, fake
-wire. See the docscan reference deployment's test suite for all of these patterns applied to
-[`examples/graphs/ocr-accounting.json`](examples/graphs/ocr-accounting.json).
+`TraceStore`. JDBC-backed stores over an in-memory H2 `DataSource` round this out into a fully
+self-contained integration test - real engine, real stores, real processors, fake wire.
+
+The **`agentsgraph-test` module** packages all of this as a ready-made kit:
+
+```java
+AgentsGraphTestHarness harness = AgentsGraphTestHarness.jdbc(h2DataSource)
+    .runSqlScript("/db/postgres/docscan_graph/graphs.sql");   // the SAME script production deploys with
+
+MockProcessor llm = harness.mockProcessor("llm-completion", Map.of("llmContent", "ANSWER"));
+harness.failProcessor("docscan-ocr", "OCR down");             // or simulate an outage
+
+ExecutionContext result = harness.execute("ocr-accounting", Map.of("hasFile", true));
+assertThat(llm.invocationCount()).isEqualTo(1);               // mocks record every invocation
+assertThat(harness.trace(result).getTags()).contains("needs_review");
+```
+
+`MockProcessor.returning/failing/answering` scripts a step's behaviour and records each incoming
+`ExecutionContext`; `SqlScriptRunner` applies a production SQL deployment script to the mock
+database; the harness registers mocks as `GraphConfigService` programmatic processors, so they
+override same-ref DB rows and survive `reload()` - the same seam a production deployment uses for
+processors with live, injected dependencies. See the docscan reference deployment's test suite
+for these patterns applied to [`examples/graphs/ocr-accounting.json`](examples/graphs/ocr-accounting.json).
 
 ### 🔄 Mapping to the Agent Loop
 

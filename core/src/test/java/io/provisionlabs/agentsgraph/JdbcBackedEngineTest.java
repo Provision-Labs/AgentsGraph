@@ -3,8 +3,11 @@ package io.provisionlabs.agentsgraph;
 import io.provisionlabs.agentsgraph.config.GraphDefinition;
 import io.provisionlabs.agentsgraph.config.ProcessorDefinition;
 import io.provisionlabs.agentsgraph.config.StepDefinition;
+import io.provisionlabs.agentsgraph.config.jdbc.JdbcConfigStore;
+import io.provisionlabs.agentsgraph.config.jdbc.JdbcProcessorDefinitionStore;
 import io.provisionlabs.agentsgraph.config.json.GraphJsonMapper;
 import io.provisionlabs.agentsgraph.context.ExecutionContext;
+import io.provisionlabs.agentsgraph.trace.jdbc.JdbcTraceStore;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
 
@@ -17,11 +20,13 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verifies {@link AgentsGraphEngine#jdbc(DataSource)} encapsulates the JDBC schema creation and
- * store wiring that a consumer (e.g. a Spring-managed chatbot module) used to have to do by hand -
- * a consumer should only ever need a {@code DataSource} and this factory, wired as a Spring bean.
+ * Verifies the store-driven engine shape: the engine itself never touches a {@code DataSource} -
+ * a consumer wires JDBC-backed {@code ConfigStore}/{@code ProcessorDefinitionStore}/{@code
+ * TraceStore} implementations (each of which ensures its own schema on construction) and hands
+ * them to {@link AgentsGraphEngine}'s three-store constructor. Swapping to JSON- or
+ * in-memory-backed stores is a wiring change only.
  */
-class AgentsGraphEngineJdbcFactoryTest {
+class JdbcBackedEngineTest {
 
     private static final String GRAPH_JSON = "{\n" +
             "  \"id\": \"jdbc-factory-graph\",\n" +
@@ -43,11 +48,17 @@ class AgentsGraphEngineJdbcFactoryTest {
         return dataSource;
     }
 
+    /** What a Spring context does: three store beans (each owning its schema) -> one engine bean. */
+    private static AgentsGraphEngine newJdbcEngine(DataSource dataSource) {
+        return new AgentsGraphEngine(new JdbcConfigStore(dataSource),
+                new JdbcProcessorDefinitionStore(dataSource), new JdbcTraceStore(dataSource));
+    }
+
     @Test
-    void jdbcFactoryCreatesSchemaAndReturnsAWorkingEngine() {
+    void jdbcBackedStoresCreateTheirSchemaAndTheEngineRunsOnThem() {
         DataSource dataSource = freshH2DataSource();
 
-        AgentsGraphEngine engine = AgentsGraphEngine.jdbc(dataSource);
+        AgentsGraphEngine engine = newJdbcEngine(dataSource);
 
         engine.deployGraphIfAbsent(GraphJsonMapper.fromJson(GRAPH_JSON));
         engine.seedAndLoadProcessors(List.of(
@@ -65,7 +76,7 @@ class AgentsGraphEngineJdbcFactoryTest {
     @Test
     void deployGraphIfAbsentDoesNotOverwriteAnExistingGraph() {
         DataSource dataSource = freshH2DataSource();
-        AgentsGraphEngine engine = AgentsGraphEngine.jdbc(dataSource);
+        AgentsGraphEngine engine = newJdbcEngine(dataSource);
 
         GraphDefinition original = GraphJsonMapper.fromJson(GRAPH_JSON);
         engine.deployGraphIfAbsent(original);
@@ -79,7 +90,7 @@ class AgentsGraphEngineJdbcFactoryTest {
     @Test
     void seedAndLoadProcessorsOnlySeedsWhenStoreIsEmpty() {
         DataSource dataSource = freshH2DataSource();
-        AgentsGraphEngine engine = AgentsGraphEngine.jdbc(dataSource);
+        AgentsGraphEngine engine = newJdbcEngine(dataSource);
 
         engine.getProcessorDefinitionStore().put(
                 new ProcessorDefinition("echo", "Custom", false, EchoProcessor.class.getName(), Map.of("custom", true)));

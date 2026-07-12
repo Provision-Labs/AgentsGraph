@@ -45,8 +45,10 @@ public final class JdbcTraceStore implements TraceStore {
     private final DataSource dataSource;
     private final Map<String, List<ExecutionEvent>> auditLogCache = new ConcurrentHashMap<>();
 
+    /** Ensures the {@code agentsgraph_execution_trace} schema exists - the store owns its own storage. */
     public JdbcTraceStore(DataSource dataSource) {
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
+        createSchema(dataSource);
     }
 
     /** Creates the {@code agentsgraph_execution_trace} table if it doesn't already exist. */

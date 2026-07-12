@@ -1,9 +1,12 @@
 package io.provisionlabs.agentsgraph;
 
 import io.provisionlabs.agentsgraph.config.StepDefinition;
+import io.provisionlabs.agentsgraph.config.jdbc.JdbcConfigStore;
+import io.provisionlabs.agentsgraph.config.jdbc.JdbcProcessorDefinitionStore;
 import io.provisionlabs.agentsgraph.context.ExecutionContext;
 import io.provisionlabs.agentsgraph.engine.Processor;
 import io.provisionlabs.agentsgraph.engine.ProcessorLoader;
+import io.provisionlabs.agentsgraph.trace.jdbc.JdbcTraceStore;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,7 +39,9 @@ class GraphConfigServiceTest {
         JdbcDataSource h2 = new JdbcDataSource();
         h2.setURL("jdbc:h2:mem:GraphConfigServiceTest_" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1");
         dataSource = h2;
-        engine = AgentsGraphEngine.jdbc(dataSource);
+        // The engine never sees the DataSource - each JDBC store owns its own schema/storage.
+        engine = new AgentsGraphEngine(new JdbcConfigStore(dataSource),
+                new JdbcProcessorDefinitionStore(dataSource), new JdbcTraceStore(dataSource));
         runScript("/sql/graph-config-service-test-data.sql");
     }
 
