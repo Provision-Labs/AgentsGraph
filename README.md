@@ -379,3 +379,7 @@ wire. See the docscan reference deployment's test suite for all of these pattern
 |  **Reflect**   | `Edge.output_mapping` + `tags_to_add` + `Status Store` | Result evaluation, tagging & audit |
 
 > 💡 **Key Advantage**: Unlike code-first frameworks where routing logic is scattered across `if/else` blocks, AgentsGraph centralizes decision-making in the `Node` and isolates execution in reusable `Edge` pipelines. This enables hot-reloads, strict auditing, and non-technical workflow management.
+
+## 📄 License
+
+Licensed under the [Apache License, Version 2.0](LICENSE).
