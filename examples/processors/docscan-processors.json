@@ -3,18 +3,48 @@
     "id": "docscan-ocr",
     "name": "docscan-ocr",
     "is_external": true,
-    "instance_class": "org.webvane.pipes.DocScanOcrProcessor",
+    "instance_class": "org.webvane.docscan.graph.processor.DocscanOcrProcessor",
     "params": {
-      "processUrl": "http://10.64.0.40:8109"
+      "processUrl": "http://10.64.0.40:8109/process/{template}"
     }
   },
   {
-    "id": "llm-postprocessor",
-    "name": "llm-postprocessor",
+    "id": "docscan-ocr-visualize",
+    "name": "docscan-ocr-visualize",
+    "is_external": false,
+    "instance_class": "org.webvane.docscan.graph.processor.OcrVisualizationProcessor",
+    "params": {}
+  },
+  {
+    "id": "text-llm",
+    "name": "text-llm",
     "is_external": true,
-    "instance_class": "org.webvane.pipes.LLMPostProcessor",
+    "instance_class": "org.webvane.docscan.graph.processor.TextLlmProcessor",
     "params": {
-      "processUrl": "http://10.64.0.39:8095"
+      "processUrl": "http://10.64.0.39:8095/completion"
     }
+  },
+  {
+    "id": "llm-completion",
+    "name": "llm-completion",
+    "is_external": true,
+    "instance_class": "org.webvane.docscan.graph.processor.LlmCompletionProcessor",
+    "params": {
+      "processUrl": "http://10.64.0.39:8095/completion"
+    }
+  },
+  {
+    "id": "llm-response-parse",
+    "name": "llm-response-parse",
+    "is_external": false,
+    "instance_class": "org.webvane.docscan.graph.processor.LlmResponseParsingProcessor",
+    "params": {}
+  },
+  {
+    "id": "fallback-answer",
+    "name": "fallback-answer",
+    "is_external": false,
+    "instance_class": "org.webvane.docscan.graph.processor.FallbackAnswerProcessor",
+    "params": {}
   }
 ]

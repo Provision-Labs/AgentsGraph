@@ -1,20 +1,41 @@
 {
   "id": "ocr-accounting",
-  "version": "v1",
+  "version": "v5",
   "templates": ["file:accountant", "file:default"],
   "entry_node_id": "intent_router",
   "nodes": [
     {
       "id": "intent_router",
-      "type": "router",
+      "routing_strategy": "rules",
+      "routing_table": {
+        "hasFile==true": "edge_classify",
+        "default": "edge_text_llm"
+      },
+      "fallback_edge_id": "edge_error_fallback"
+    },
+    {
+      "id": "classify_router",
       "routing_strategy": "rules",
       "routing_table": {
         "default": "edge_ocr_pipeline"
       },
-      "fallback_edge_id": "edge_ocr_pipeline"
+      "fallback_edge_id": "edge_error_fallback"
     }
   ],
   "edges": [
+    {
+      "id": "edge_classify",
+      "steps": [
+        {
+          "id": "step_classify",
+          "processor_id": "docscan-classify",
+          "output_to_next": ["documentType", "confidence", "cachedOcrJson"],
+          "output_to_save": ["documentType", "confidence"]
+        }
+      ],
+      "tags_to_add": ["classified"],
+      "next_node_id": "classify_router"
+    },
     {
       "id": "edge_ocr_pipeline",
       "steps": [
@@ -25,19 +46,58 @@
             "processUrl": "http://docscan-service/process/{template}"
           },
           "output_to_next": ["json"],
-          "output_to_save": ["tables", "textItems", "json"]
+          "output_to_save": ["json"]
         },
         {
-          "id": "step_llm",
-          "processor_id": "llm-postprocessor",
+          "id": "step_ocr_visualize",
+          "processor_id": "docscan-ocr-visualize",
+          "output_to_next": ["json", "textItems", "tables", "bodyItems"],
+          "output_to_save": ["textItems", "tables", "bodyItems"]
+        },
+        {
+          "id": "step_llm_prompt",
+          "processor_id": "llm-prompt-prepare",
+          "output_to_next": ["prompt", "promptHeader", "promptName"],
+          "output_to_save": []
+        },
+        {
+          "id": "step_llm_call",
+          "processor_id": "llm-completion",
           "params": {
-            "processUrl": "http://docscan-service/process/{template}"
+            "processUrl": "http://llm-service/completion"
           },
-          "output_to_save": ["tables", "textItems", "json"]
+          "output_to_next": ["llmContent", "promptHeader", "promptName"],
+          "output_to_save": ["llmContent"]
+        },
+        {
+          "id": "step_llm_parse",
+          "processor_id": "llm-response-parse",
+          "output_to_save": ["summary", "llmBodyItems"]
         }
       ],
-      "output_mapping": {},
       "tags_to_add": ["ocr_processed"],
+      "next_node_id": null
+    },
+    {
+      "id": "edge_text_llm",
+      "steps": [
+        {
+          "id": "step_text_llm",
+          "processor_id": "text-llm"
+        }
+      ],
+      "tags_to_add": ["text_processed"],
+      "next_node_id": null
+    },
+    {
+      "id": "edge_error_fallback",
+      "steps": [
+        {
+          "id": "step_fallback",
+          "processor_id": "fallback-answer"
+        }
+      ],
+      "tags_to_add": ["needs_review"],
       "next_node_id": null
     }
   ]
