@@ -101,8 +101,10 @@ A pipeline is not a separate format bolted onto the graph - it **is** a graph: a
 unconditionally routed to a single `Edge` carrying an ordered list of steps. `config`'s `json` and
 `jdbc` sub-packages give the graph itself everything a linear pipeline needs, in the framework's
 own native JSON dialect (see [`examples/graphs/ocr-accounting.json`](examples/graphs/ocr-accounting.json)
-for a full pipeline example and [`examples/graphs/smart-intent-router.json`](examples/graphs/smart-intent-router.json)
-for a branching, delegate-routed one):
+for a full production-shaped pipeline - two `rules` routers, a classification edge and a 5-step
+OCR/LLM pipeline, described in the Routing Specification below - and
+[`examples/graphs/smart-intent-router.json`](examples/graphs/smart-intent-router.json)
+for a delegate-routed one):
 
 - **`GraphJsonMapper`** (`config.json`) is the (de)serializer for the whole `GraphDefinition` -
   nodes, edges, routing tables/delegates, input/output mappings, tags, and each step's
@@ -159,46 +161,136 @@ own `ConfigStore`.
 
 ##  Routing Specification
 
-AgentsGraph supports two routing strategies per Node: **Declarative Rules** and **Abstract Delegates**. This enables mixing deterministic business logic with external AI/ML services while maintaining strict control, validation, and fallback safety.
+AgentsGraph supports two routing strategies per Node: **Declarative Rules** and **Abstract Delegates**. This enables mixing deterministic business logic with external AI/ML services while maintaining fallback safety.
 
 ### 🔹 Routing Strategies
 
 | Strategy | Type | Use Case | Config Key |
 |:---|:---|:---|:---|
 | `rules` | Declarative | Simple conditions, deterministic routing, rule-based engines | `routing_table` |
-| `classifier` | Delegated | External ML models, complex Java services, Human-in-the-loop, LLM routers | `routing_delegate` |
+| `classificator` (alias: `classifier`) | Delegated | External ML models, complex Java services, Human-in-the-loop, LLM routers | `routing_delegate` |
 
 ---
 
-###  Classificator Configuration
+### Rules Configuration
 
-When `routing_strategy: "classificator"`, the Node delegates decision-making to an external module. The runtime enforces strict contracts, validates outputs against graph topology, and guarantees fallback paths.
+When `routing_strategy: "rules"`, the `ConditionEngine` evaluates the node's `routing_table` -
+an ordered map of `"path==value"` equality conditions against a merged view of
+`accumulated_state` (highest priority) and `input_data`. Paths use dots to descend into nested
+maps (`user.tier==vip`). The literal key `"default"` matches unconditionally and is always
+evaluated last, acting as a catch-all. If nothing matches and there is no `default`, the node
+falls back to `fallback_edge_id` (or the flow fails if none is set).
+
+Because conditions read the accumulated context, a `rules` node placed *after* an edge can route
+on that edge's own output - so a "classify then route on the result" flow needs no custom routing
+code at all: run classification as a normal edge step, save its result, and route on it
+declaratively (see the pipeline example below).
+
+```json
+{
+  "id": "classify_router",
+  "routing_strategy": "rules",
+  "routing_table": {
+    "documentType==passport": "edge_name_value_pipeline",
+    "documentType==handwritten": "edge_manual_review",
+    "default": "edge_ocr_pipeline"
+  },
+  "fallback_edge_id": "edge_error_fallback"
+}
+```
+
+### Classificator Configuration
+
+When `routing_strategy: "classificator"`, the Node delegates decision-making to a
+`RoutingDelegate` implementation registered in the engine's `RoutingDelegateRegistry` under
+`routing_delegate.ref` (`engine.registerRoutingDelegate(ref, delegate)`). The delegate receives
+the full `ExecutionContext` plus the declarative `routing_delegate` config and returns a
+`DelegateResult`: the chosen `edgeId`, a `confidence`, and an optional `raw` output map.
 
 ```json
 {
   "id": "smart_intent_router",
   "type": "classifier",
   "routing_strategy": "classificator",
-  
+
   "routing_delegate": {
     "type": "model_service",
     "ref": "llm_intent_classifier_v4",
     "params": {
       "temperature": 0.1,
-      "allowed_edges": ["edge_support", "edge_sales", "edge_billing"]
+      "supportEdgeId": "edge_support",
+      "salesEdgeId": "edge_sales"
     },
     "timeout_ms": 3000
   },
 
   "output_mapping": {
-    "delegate_result.edge_id": "routing_decision.next_edge",
-    "delegate_result.confidence": "routing_decision.confidence"
+    "intent": "classification.intent",
+    "confidence": "classification.confidence"
   },
 
   "fallback_edge_id": "pipe_error_handler"
 }
+```
+
+What the runtime actually guarantees:
+
+- **Fallback safety**: if the delegate throws, returns `null`, or returns no `edgeId`, the node
+  routes to `fallback_edge_id` instead of failing the flow (and only fails if none is set). The
+  same `fallback_edge_id` also covers a *successfully routed* edge whose own step pipeline later
+  throws - the orchestrator re-routes to the fallback edge with the failure message merged into
+  the context under `pipeline_error`, so the graph can shape a user-facing error response.
+- **`output_mapping`** projects the delegate's `raw` output map into the context *before* the
+  selected edge runs: each mapping key is a key in `DelegateResult.getRaw()`, each value is the
+  context key it's stored under. Downstream steps read the classification the same way they read
+  any other accumulated state. (The chosen `edge_id`/`confidence` are not part of `raw` - they're
+  recorded per-node in the Trace Store's audit log as the `RoutingOutcome`.)
+- **Audit**: every routing decision (edge id, confidence, source: `RULES`/`DELEGATE`/`FALLBACK`)
+  is appended to the Trace Store together with a context snapshot.
+
+What the runtime deliberately does **not** do (the delegate's responsibility):
+
+- `params` and `timeout_ms` are passed through to the delegate verbatim - the runtime doesn't
+  interpret them or enforce the timeout; a delegate wrapping a network call should apply
+  `timeout_ms` to its own client.
+- The returned `edgeId` isn't validated against a whitelist - an id that doesn't exist in the
+  graph simply fails edge lookup (which the fallback above does *not* cover, since routing itself
+  succeeded). Keep edge ids in `params` (as in the example) so graph JSON stays the single source
+  of truth for topology.
+
+> 💡 **Prefer a plain step + `rules` router when possible.** A `RoutingDelegate` couples
+> classification and routing into one non-declarative unit. If the classification result can be
+> expressed as context keys, run it as a normal edge step (`output_to_save`) and route on the
+> result with a `rules` node instead - the classifier then shares the same processor lifecycle,
+> DB-driven configuration, per-step tracing and `fallback_edge_id` error handling as every other
+> step, and tests can swap it for a one-line fake `Processor`. That is exactly how
+> [`examples/graphs/ocr-accounting.json`](examples/graphs/ocr-accounting.json) is structured -
+> reserve `classificator` for cases where the routing decision itself genuinely can't be
+> declarative (human-in-the-loop, dynamic edge sets).
+
+### Reference pipeline example
+
+[`examples/graphs/ocr-accounting.json`](examples/graphs/ocr-accounting.json) is a complete,
+production-shaped document-processing graph exercising all of the above - two `rules` routers, a
+classification edge feeding the second router, a 5-step OCR/LLM pipeline with per-step
+`output_to_next`/`output_to_save` threading, and a shared error-fallback edge:
 
 ```
+                    hasFile==false --> edge_text_llm       (plain LLM answer)
+input --> intent_router
+ (rules)            hasFile==true  --> edge_classify       (document classifier step)
+                                          --> classify_router (rules on documentType)
+                                                --default--> edge_ocr_pipeline
+                                                               (OCR -> visualization ->
+                                                                prompt prep -> LLM call -> parse)
+
+any step failure --> edge_error_fallback (user-facing error message)
+```
+
+Note how `edge_classify` saves `documentType` into the context and `classify_router` routes on it
+declaratively, and how `output_to_next` between steps of the same edge *replaces* what the next
+step sees (an empty/absent list forwards everything) - a step must explicitly re-forward keys a
+later step still needs.
 
 ### 🔄 Mapping to the Agent Loop
 
