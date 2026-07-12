@@ -292,6 +292,83 @@ declaratively, and how `output_to_next` between steps of the same edge *replaces
 step sees (an empty/absent list forwards everything) - a step must explicitly re-forward keys a
 later step still needs.
 
+## 🧪 Testing Without AI APIs
+
+A graph whose steps call LLM/OCR/classification services is still, above the wire, deterministic
+routing and data-threading logic - and that is exactly what tests should exercise. Because every
+external call is a `Processor` resolved by ref from the `ProcessorRegistry` (never constructed
+inside the engine), tests swap the *boundary* without touching graph config or engine code, and
+run the full flow - routing, `output_to_next`/`output_to_save` threading, `fallback_edge_id`
+error paths, tracing, tags - with **zero network calls and zero AI-API token spend**.
+
+```mermaid
+flowchart LR
+    subgraph TESTED["✅ Exercised for real in tests"]
+        direction TB
+        N1["intent_router<br/>(rules)"] --> EC["edge_classify<br/>step: docscan-classify"]
+        EC --> N2["classify_router<br/>(rules on documentType)"]
+        N2 --> EP["edge_ocr_pipeline<br/>steps: ocr → visualize → prompt → llm-call → parse"]
+        N1 --> ET["edge_text_llm"]
+        N2 -.step failure.-> EF["edge_error_fallback"]
+        EP -.step failure.-> EF
+    end
+
+    subgraph SEAM["🔌 Mock seam (per-test choice)"]
+        direction TB
+        HTTP["HttpClient interface<br/>(stubbed responses,<br/>real Processor logic runs)"]
+        PROC["whole Processor<br/>(one-line fake via<br/>registerProcessor)"]
+    end
+
+    subgraph EXTERNAL["🚫 Never reached in tests"]
+        direction TB
+        LLM["LLM API<br/>(tokens 💸)"]
+        OCR["OCR service"]
+        CLS["Classifier service"]
+    end
+
+    EC & EP & ET -->|"prod: real client"| EXTERNAL
+    EC & EP & ET -->|"test: swapped here"| SEAM
+```
+
+Two mock depths, chosen per test:
+
+- **Mock the HTTP client, run the real `Processor`** - the processor takes its HTTP client via
+  constructor injection (keeping a no-arg constructor for `ProcessorLoader`'s reflective loading)
+  and the test hands it a stub scripted with canned JSON responses per URL. The processor's real
+  logic - URL templating, request shaping, response parsing, caching, retry/backoff - actually
+  executes; only the socket is fake. This is the default: a test that mocks the whole processor
+  would only ever test the mock.
+
+  ```java
+  StubHttpClient http = new StubHttpClient()
+      .withResponse("http://classify/api",  "{\"template\":\"invoice\",\"prob\":0.95}")
+      .withResponse("http://ocr/process",   "{\"documents\":[...]}")
+      .withResponse("http://llm/completion","{\"content\":\"SUMMARY\"}");
+
+  engine.registerProcessor("docscan-classify", new DocumentClassifyProcessor(new HttpClassifierClient(http, url)));
+  engine.registerProcessor("docscan-ocr",      new DocscanOcrProcessor(http));
+  engine.registerProcessor("llm-completion",   new LlmCompletionProcessor(http));
+
+  ExecutionContext result = engine.execute("ocr-accounting", input);   // full graph, no network
+  ```
+
+- **Mock the whole `Processor`** - when a test doesn't care about a step's internals at all
+  (e.g. a routing-focused test that only needs *a* classification in the context), replace the
+  step with a one-line lambda:
+
+  ```java
+  engine.registerProcessor("docscan-classify",
+      (ctx, step) -> Map.of("documentType", "invoice", "confidence", 0.95));
+  ```
+
+Failure paths cost nothing to simulate either: simply *don't* stub a URL (the client throws →
+the edge fails → the orchestrator re-routes to `fallback_edge_id` with `pipeline_error` in the
+context), and assert on the fallback edge's output and the `needs_review` tag in the
+`TraceStore`. An `InMemoryOutputSink` and `AgentsGraphEngine.jdbc(h2DataSource)` round this out
+into a fully self-contained integration test - real engine, real stores, real processors, fake
+wire. See the docscan reference deployment's test suite for all of these patterns applied to
+[`examples/graphs/ocr-accounting.json`](examples/graphs/ocr-accounting.json).
+
 ### 🔄 Mapping to the Agent Loop
 
 | Agent Loop Phase | AgentsGraph Component | Responsibility |
