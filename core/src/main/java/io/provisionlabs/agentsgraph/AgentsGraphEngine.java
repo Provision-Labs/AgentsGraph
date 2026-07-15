@@ -6,6 +6,7 @@ import io.provisionlabs.agentsgraph.config.InMemoryConfigStore;
 import io.provisionlabs.agentsgraph.config.InMemoryProcessorDefinitionStore;
 import io.provisionlabs.agentsgraph.config.ProcessorDefinition;
 import io.provisionlabs.agentsgraph.config.ProcessorDefinitionStore;
+import io.provisionlabs.agentsgraph.config.json.GraphJsonMapper;
 import io.provisionlabs.agentsgraph.context.ExecutionContext;
 import io.provisionlabs.agentsgraph.control.ControlPlane;
 import io.provisionlabs.agentsgraph.control.DefaultControlPlane;
@@ -24,8 +25,11 @@ import io.provisionlabs.agentsgraph.engine.RuntimeOrchestrator;
 import io.provisionlabs.agentsgraph.trace.InMemoryTraceStore;
 import io.provisionlabs.agentsgraph.trace.TraceStore;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ForkJoinPool;
 
@@ -39,6 +43,16 @@ import java.util.concurrent.ForkJoinPool;
  * engine.deployGraph(graph);
  * ExecutionContext result = engine.execute("support_flow", input, metadata);
  * }</pre>
+ *
+ * <p><b>DB-driven loading &amp; reload.</b> Processor definitions are read from the engine's
+ * {@link ProcessorDefinitionStore} - lazily on the first {@link #execute}, and again on demand via
+ * {@link #reload()}, so changing a processor row's {@code params} (or adding a new row) takes
+ * effect without a redeploy. Processors registered through {@link #registerProcessor} (the ones
+ * needing live, injected dependencies that can't be instantiated reflectively from a DB row) are
+ * pinned: they're re-applied after every load and always win over a same-ref DB row. Graphs need
+ * no reload at all - the orchestrator resolves the graph from the {@link ConfigStore} on every
+ * execution, so with a JDBC-backed store an {@code UPDATE agentsgraph_graph_config} is picked up
+ * by the very next run.
  */
 public final class AgentsGraphEngine {
 
@@ -50,21 +64,11 @@ public final class AgentsGraphEngine {
     private final OutputSink outputSink;
     private final RuntimeOrchestrator orchestrator;
     private final ControlPlane controlPlane;
+    private final Map<String, Processor> programmaticProcessors = new ConcurrentHashMap<>();
+    private final Object loadLock = new Object();
+    private volatile boolean loaded;
     private volatile ProcessorHealthMonitor healthMonitor =
             new ProcessorHealthMonitor(ProcessorLoader.LoadResult.EMPTY);
-
-    public AgentsGraphEngine(ConfigStore configStore, TraceStore traceStore,
-                              ProcessorRegistry processorRegistry, RoutingDelegateRegistry delegateRegistry) {
-        this(configStore, traceStore, processorRegistry, delegateRegistry,
-                NoopOutputSink.INSTANCE, ForkJoinPool.commonPool());
-    }
-
-    public AgentsGraphEngine(ConfigStore configStore, TraceStore traceStore,
-                              ProcessorRegistry processorRegistry, RoutingDelegateRegistry delegateRegistry,
-                              OutputSink outputSink, Executor asyncExecutor) {
-        this(configStore, new InMemoryProcessorDefinitionStore(), traceStore, processorRegistry, delegateRegistry,
-                outputSink, asyncExecutor);
-    }
 
     /**
      * Store-driven constructor - the recommended production shape: the engine never touches a
@@ -78,6 +82,19 @@ public final class AgentsGraphEngine {
                               TraceStore traceStore) {
         this(configStore, processorDefinitionStore, traceStore, new ProcessorRegistry(),
                 new RoutingDelegateRegistry(), NoopOutputSink.INSTANCE, ForkJoinPool.commonPool());
+    }
+
+    /**
+     * Store-driven constructor additionally taking programmatic processors (see
+     * {@link #registerProcessor}) - convenient for declarative wiring, e.g. a Spring
+     * {@code <map>} of the processors that need live, injected dependencies.
+     */
+    public AgentsGraphEngine(ConfigStore configStore, ProcessorDefinitionStore processorDefinitionStore,
+                              TraceStore traceStore, Map<String, Processor> programmaticProcessors) {
+        this(configStore, processorDefinitionStore, traceStore);
+        if (programmaticProcessors != null) {
+            new LinkedHashMap<>(programmaticProcessors).forEach(this::registerProcessor);
+        }
     }
 
     /**
@@ -112,7 +129,15 @@ public final class AgentsGraphEngine {
         configStore.putGraph(graph);
     }
 
+    /**
+     * Registers a programmatic processor - one constructed by the application (typically because
+     * it needs a live, injected dependency a DB row can't express). Programmatic processors are
+     * pinned: {@link #reload()} re-applies them after loading the store's definitions, so they
+     * always win over a same-ref DB row and survive reloads. Tests use the same seam to overlay
+     * mock processors over SQL-seeded ones - at any time, including between executions.
+     */
     public void registerProcessor(String ref, Processor processor) {
+        programmaticProcessors.put(ref, processor);
         processorRegistry.register(ref, processor);
     }
 
@@ -126,9 +151,19 @@ public final class AgentsGraphEngine {
         return result;
     }
 
-    /** Convenience for {@code loadProcessors(getProcessorDefinitionStore().findAll())}. */
-    public ProcessorLoader.LoadResult loadProcessorsFromStore() {
-        return loadProcessors(processorDefinitionStore.findAll());
+    /**
+     * Re-reads every {@link ProcessorDefinition} from the {@link ProcessorDefinitionStore},
+     * reflectively (re-)registers them, then re-applies the pinned programmatic processors on
+     * top. Called lazily by the first {@link #execute}; call explicitly after changing
+     * {@code agentsgraph_processor} rows to pick the changes up without a redeploy.
+     */
+    public ProcessorLoader.LoadResult reload() {
+        synchronized (loadLock) {
+            ProcessorLoader.LoadResult result = loadProcessors(processorDefinitionStore.findAll());
+            programmaticProcessors.forEach(processorRegistry::register);
+            loaded = true;
+            return result;
+        }
     }
 
     /**
@@ -142,7 +177,7 @@ public final class AgentsGraphEngine {
                 processorDefinitionStore.put(definition);
             }
         }
-        return loadProcessorsFromStore();
+        return reload();
     }
 
     /**
@@ -160,13 +195,21 @@ public final class AgentsGraphEngine {
         delegateRegistry.register(ref, delegate);
     }
 
+    /** Runs the graph {@code graphId} (loading processors from the store first, once, lazily). */
     public ExecutionContext execute(String graphId, ExecutionContext initialContext) {
+        ensureLoaded();
         return orchestrator.run(graphId, initialContext);
     }
 
     /** Asynchronous counterpart of {@link #execute}. */
     public CompletableFuture<ExecutionContext> executeAsync(String graphId, ExecutionContext initialContext) {
+        ensureLoaded();
         return orchestrator.runAsync(graphId, initialContext);
+    }
+
+    /** Serializes the currently-deployed revision of {@code graphId} back to graph JSON, for verification. */
+    public String dumpGraphJson(String graphId) {
+        return GraphJsonMapper.toJson(configStore.getGraph(graphId));
     }
 
     public ConfigStore getConfigStore() {
@@ -200,5 +243,15 @@ public final class AgentsGraphEngine {
     public GraphClassifier createTemplateGraphClassifier(String defaultGraphIdWithFile,
                                                            String defaultGraphIdWithoutFile) {
         return new TemplateGraphClassifier(configStore, defaultGraphIdWithFile, defaultGraphIdWithoutFile);
+    }
+
+    private void ensureLoaded() {
+        if (!loaded) {
+            synchronized (loadLock) {
+                if (!loaded) {
+                    reload();
+                }
+            }
+        }
     }
 }

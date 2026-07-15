@@ -1,7 +1,6 @@
 package io.provisionlabs.agentsgraph.test;
 
 import io.provisionlabs.agentsgraph.AgentsGraphEngine;
-import io.provisionlabs.agentsgraph.GraphConfigService;
 import io.provisionlabs.agentsgraph.config.jdbc.JdbcConfigStore;
 import io.provisionlabs.agentsgraph.config.jdbc.JdbcProcessorDefinitionStore;
 import io.provisionlabs.agentsgraph.context.ExecutionContext;
@@ -10,7 +9,6 @@ import io.provisionlabs.agentsgraph.trace.TraceRecord;
 import io.provisionlabs.agentsgraph.trace.jdbc.JdbcTraceStore;
 
 import javax.sql.DataSource;
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -35,18 +33,16 @@ import java.util.Map;
  * assertThat(harness.trace(result).getTags()).contains("ocr_processed");
  * }</pre>
  *
- * <p>Mocks are registered as {@link GraphConfigService} programmatic processors, so they override
- * same-ref DB rows and survive {@link GraphConfigService#reload()} - exactly the seam a production
- * deployment uses for processors with live, injected dependencies. Register mocks <em>before</em>
- * the first {@link #execute} (the underlying service loads lazily); real (non-mock) processors
- * that need live dependencies can be supplied the same way via {@link #registerProcessor}.
+ * <p>Mocks are registered as the engine's programmatic processors
+ * ({@link AgentsGraphEngine#registerProcessor}), so they override same-ref DB rows and survive
+ * {@link AgentsGraphEngine#reload()} - exactly the seam a production deployment uses for
+ * processors with live, injected dependencies. Mocks can be (re-)registered at any time,
+ * including between executions.
  */
 public final class AgentsGraphTestHarness {
 
     private final AgentsGraphEngine engine;
     private final DataSource dataSource;
-    private final Map<String, Processor> programmaticProcessors = new LinkedHashMap<>();
-    private GraphConfigService service;
 
     private AgentsGraphTestHarness(AgentsGraphEngine engine, DataSource dataSource) {
         this.engine = engine;
@@ -85,24 +81,23 @@ public final class AgentsGraphTestHarness {
 
     /** Replaces the {@code ref} step with a mock that always returns {@code output}. */
     public MockProcessor mockProcessor(String ref, Map<String, Object> output) {
-        return register(ref, MockProcessor.returning(output));
+        return registerProcessor(ref, MockProcessor.returning(output));
     }
 
     /** Replaces the {@code ref} step with a mock that always throws - for fallback-path tests. */
     public MockProcessor failProcessor(String ref, String message) {
-        return register(ref, MockProcessor.failing(message));
+        return registerProcessor(ref, MockProcessor.failing(message));
     }
 
     /** Replaces the {@code ref} step with the given (mock or real) processor instance. */
     public <P extends Processor> P registerProcessor(String ref, P processor) {
-        requireNotLoaded();
-        programmaticProcessors.put(ref, processor);
+        engine.registerProcessor(ref, processor);
         return processor;
     }
 
-    /** Runs {@code graphId} with the given input data (loading graph/processors from the stores first). */
+    /** Runs {@code graphId} with the given input data (the engine lazily loads graph/processors from its stores). */
     public ExecutionContext execute(String graphId, Map<String, Object> inputData) {
-        return getService().execute(graphId, ExecutionContext.newFlow(inputData, Map.of()));
+        return engine.execute(graphId, ExecutionContext.newFlow(inputData, Map.of()));
     }
 
     /** The flow's {@link TraceRecord} (status, tags, telemetry) for asserting on the audit trail. */
@@ -111,26 +106,7 @@ public final class AgentsGraphTestHarness {
                 .orElseThrow(() -> new IllegalStateException("No trace for flow " + result.getFlowId()));
     }
 
-    /** The lazily-created {@link GraphConfigService} over the harness's engine and mocks. */
-    public GraphConfigService getService() {
-        if (service == null) {
-            service = new GraphConfigService(engine, programmaticProcessors);
-        }
-        return service;
-    }
-
     public AgentsGraphEngine getEngine() {
         return engine;
-    }
-
-    private MockProcessor register(String ref, MockProcessor mock) {
-        return registerProcessor(ref, mock);
-    }
-
-    private void requireNotLoaded() {
-        if (service != null) {
-            throw new IllegalStateException(
-                    "Register mocks before the first execute() - the GraphConfigService already snapshotted them");
-        }
     }
 }

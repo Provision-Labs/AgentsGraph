@@ -82,15 +82,20 @@ class AgentsGraphTestHarnessTest {
     }
 
     @Test
-    void mocksMustBeRegisteredBeforeTheFirstExecute() {
+    void mocksCanBeReRegisteredBetweenExecutions() {
         AgentsGraphTestHarness harness = jdbcHarness();
-        harness.mockProcessor("ext-service", Map.of("result", "canned"));
-        harness.mockProcessor("fallback", Map.of("answer", "unused"));
-        harness.execute("harness-graph", Map.of("mode", "ext"));
+        harness.mockProcessor("ext-service", Map.of("result", "first"));
+        harness.mockProcessor("fallback", Map.of("answer", "sorry"));
 
-        assertThatThrownBy(() -> harness.mockProcessor("late", Map.of()))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("before the first execute()");
+        ExecutionContext ok = harness.execute("harness-graph", Map.of("mode", "ext"));
+        assertThat(ok.getAccumulatedState()).containsEntry("result", "first");
+
+        // Same graph, same run of the test - now simulate the service going down.
+        harness.failProcessor("ext-service", "went down");
+
+        ExecutionContext fallback = harness.execute("harness-graph", Map.of("mode", "ext"));
+        assertThat(fallback.getAccumulatedState()).containsEntry("answer", "sorry");
+        assertThat(harness.trace(fallback).getTags()).contains("needs_review");
     }
 
     @Test
