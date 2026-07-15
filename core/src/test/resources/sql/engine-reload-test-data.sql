@@ -1,4 +1,4 @@
--- Test fixture for GraphConfigServiceTest, mirroring the legacy docscan-pipeline's
+-- Test fixture for AgentsGraphEngineReloadTest, mirroring the legacy docscan-pipeline's
 -- pipeline-docscan-ocr-test-data.sql convention: the graph config (by id) AND the processor list
 -- are plain SQL rows, loaded from the database - nothing is seeded from bundled resources.
 -- Schema (agentsgraph_graph_config/agentsgraph_processor) is created by AgentsGraphEngine.jdbc()
@@ -6,10 +6,10 @@
 
 INSERT INTO agentsgraph_processor (id, name, is_external, instance_class, params) VALUES
     ('seeded-echo', 'Echo processor', false,
-     'io.provisionlabs.agentsgraph.GraphConfigServiceTest$SeededEchoProcessor',
+     'io.provisionlabs.agentsgraph.AgentsGraphEngineReloadTest$SeededEchoProcessor',
      '{"prefix": "v1"}'),
     ('seeded-external', 'External-service processor', true,
-     'io.provisionlabs.agentsgraph.GraphConfigServiceTest$SeededExternalProcessor',
+     'io.provisionlabs.agentsgraph.AgentsGraphEngineReloadTest$SeededExternalProcessor',
      '{}');
 
 INSERT INTO agentsgraph_graph_config (id, name, description, config, created_at, updated_at) VALUES
