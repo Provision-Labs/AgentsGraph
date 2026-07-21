@@ -34,6 +34,11 @@ public final class InMemoryTraceStore implements TraceStore {
     }
 
     @Override
+    public void recordError(String flowId, String error) {
+        requireRecord(flowId).setError(error);
+    }
+
+    @Override
     public Optional<TraceRecord> find(String flowId) {
         return Optional.ofNullable(records.get(flowId));
     }

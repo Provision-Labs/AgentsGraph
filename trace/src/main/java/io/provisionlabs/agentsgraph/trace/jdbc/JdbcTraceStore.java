@@ -61,10 +61,14 @@ public final class JdbcTraceStore implements TraceStore {
                             "tenant_id VARCHAR(128), " +
                             "status VARCHAR(32) NOT NULL, " +
                             "tags TEXT, " +
+                            "error TEXT, " +
                             "step_count INT DEFAULT 0, " +
                             "token_cost BIGINT DEFAULT 0, " +
                             "duration_ms BIGINT DEFAULT 0, " +
                             "retry_attempts INT DEFAULT 0)");
+            // Upgrade path for tables created before the error column existed (idempotent).
+            statement.execute(
+                    "ALTER TABLE agentsgraph_execution_trace ADD COLUMN IF NOT EXISTS error TEXT");
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to create agentsgraph_execution_trace schema", e);
         }
@@ -133,10 +137,23 @@ public final class JdbcTraceStore implements TraceStore {
     }
 
     @Override
+    public void recordError(String flowId, String error) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement update = connection.prepareStatement(
+                     "UPDATE agentsgraph_execution_trace SET error = ? WHERE flow_id = ?")) {
+            update.setString(1, error);
+            update.setString(2, flowId);
+            requireRow(update.executeUpdate(), flowId);
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to record error for flow '" + flowId + "'", e);
+        }
+    }
+
+    @Override
     public Optional<TraceRecord> find(String flowId) {
         try (Connection connection = dataSource.getConnection();
              PreparedStatement select = connection.prepareStatement(
-                     "SELECT tenant_id, status, tags, step_count, token_cost, duration_ms, retry_attempts " +
+                     "SELECT tenant_id, status, tags, error, step_count, token_cost, duration_ms, retry_attempts " +
                              "FROM agentsgraph_execution_trace WHERE flow_id = ?")) {
             select.setString(1, flowId);
             try (ResultSet rs = select.executeQuery()) {
@@ -145,6 +162,7 @@ public final class JdbcTraceStore implements TraceStore {
                 }
                 TraceRecord record = new TraceRecord(flowId, rs.getString("tenant_id"));
                 record.setStatus(ExecutionStatus.valueOf(rs.getString("status")));
+                record.setError(rs.getString("error"));
                 record.addTags(parseTags(rs.getString("tags")));
                 record.getTelemetry().setDurationMs(rs.getLong("duration_ms"));
                 record.getTelemetry().addTokenCost(rs.getLong("token_cost"));

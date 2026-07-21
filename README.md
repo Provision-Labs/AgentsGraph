@@ -33,7 +33,7 @@ The core execution loop that maps conceptual Agent phases to technical component
 
 **4️⃣ Status & Trace Store (Observability)**  
 Time-series indexed storage for every execution lifecycle event.
-- Tracking: `flow_id`, `status` (`running|completed|failed|paused`)
+- Tracking: `flow_id`, `status` (`running|completed|error|failed|paused`)
 - Dynamic tagging: `tags: ["vip", "billing", "auto_routed", "needs_review"]`
 - Telemetry: `{duration_ms, token_cost, step_count, retry_attempts}`
 - Audit log: `[{node_id, routing_decision, timestamp, context_snapshot}]`
@@ -252,6 +252,12 @@ What the runtime actually guarantees:
   same `fallback_edge_id` also covers a *successfully routed* edge whose own step pipeline later
   throws - the orchestrator re-routes to the fallback edge with the failure message merged into
   the context under `pipeline_error`, so the graph can shape a user-facing error response.
+- **Fallback IS an error**: *any* `fallback_edge_id` activation - routing fallback or edge-step
+  failure - is treated as a failure, not silently absorbed: it's logged through SLF4J with the
+  original exception attached (never lost in wrapper layers), the failure reason/stack trace is
+  persisted into the trace record's `error` field, and the flow finishes with status `error`
+  (never `completed`). A failure with no fallback configured propagates with its cause attached
+  and leaves the flow `failed`.
 - **`output_mapping`** projects the delegate's `raw` output map into the context *before* the
   selected edge runs: each mapping key is a key in `DelegateResult.getRaw()`, each value is the
   context key it's stored under. Downstream steps read the classification the same way they read

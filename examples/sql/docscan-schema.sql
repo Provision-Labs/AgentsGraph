@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS agentsgraph_execution_trace (
     tenant_id      VARCHAR(128),
     status         VARCHAR(32) NOT NULL,
     tags           TEXT,
+    error          TEXT,
     step_count     INT DEFAULT 0,
     token_cost     BIGINT DEFAULT 0,
     duration_ms    BIGINT DEFAULT 0,

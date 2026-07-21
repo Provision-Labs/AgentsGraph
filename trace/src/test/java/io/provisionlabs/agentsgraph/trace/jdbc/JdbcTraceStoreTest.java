@@ -49,6 +49,20 @@ class JdbcTraceStoreTest {
     }
 
     @Test
+    void recordsAndRoundTripsTheFailureError() {
+        store.startFlow("flow-err", "acme");
+
+        assertThat(store.find("flow-err").orElseThrow().getError()).isNull();
+
+        store.recordError("flow-err", "java.lang.IllegalStateException: OCR service unavailable\n\tat ...");
+        store.updateStatus("flow-err", ExecutionStatus.ERROR);
+
+        TraceRecord record = store.find("flow-err").orElseThrow();
+        assertThat(record.getStatus()).isEqualTo(ExecutionStatus.ERROR);
+        assertThat(record.getError()).contains("OCR service unavailable");
+    }
+
+    @Test
     void addingTagsIsCumulativeAcrossCalls() {
         store.startFlow("flow-2", "acme");
 
