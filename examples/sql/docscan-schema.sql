@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS agentsgraph_execution_trace (
     retry_attempts INT DEFAULT 0
 );
 
--- Step-level DEBUG trace (see JdbcStepTraceStore): one row per executed step when a flow runs in
+-- Step-level DEBUG trace (see JdbcTraceStore): one row per executed step when a flow runs in
 -- debug mode - full input-context snapshot + raw output, enabling post-mortem inspection and
 -- AgentsGraphEngine.resumeFrom(flowId, seq). Not written at all for normal (non-debug) runs.
 CREATE TABLE IF NOT EXISTS agentsgraph_step_trace (
@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS agentsgraph_step_trace (
     processor_ref  VARCHAR(128),
     input_context  TEXT,                  -- full context snapshot the step saw (ContextJsonCodec)
     output_raw     TEXT,                  -- raw output before output_to_next/output_to_save
-    status         VARCHAR(16) NOT NULL,  -- OK | FAILED
+    status         VARCHAR(32) NOT NULL,  -- COMPLETED | FAILED (same enum as the flow status)
     error          TEXT,                  -- stack trace when FAILED
     restartable    BOOLEAN,               -- false if a value was dropped/truncated in the snapshot
     started_at     BIGINT,

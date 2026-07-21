@@ -4,9 +4,9 @@ import io.provisionlabs.agentsgraph.config.EdgeDefinition;
 import io.provisionlabs.agentsgraph.config.StepDefinition;
 import io.provisionlabs.agentsgraph.context.ExecutionContext;
 import io.provisionlabs.agentsgraph.trace.ContextJsonCodec;
-import io.provisionlabs.agentsgraph.trace.StepStatus;
+import io.provisionlabs.agentsgraph.trace.ExecutionStatus;
 import io.provisionlabs.agentsgraph.trace.StepTraceRecord;
-import io.provisionlabs.agentsgraph.trace.StepTraceStore;
+import io.provisionlabs.agentsgraph.trace.TraceStore;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -15,19 +15,20 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Debug-mode {@link StepTracer}: turns every step execution into a {@link StepTraceRecord} - full
- * input-context snapshot, raw output, timing, and (on failure) the stack trace - appended to a
- * {@link StepTraceStore}. One instance per flow; {@code seq} is its monotonic step counter.
+ * input-context snapshot, raw output, timing, and (on failure) the stack trace - appended to the
+ * {@link TraceStore}'s step-level trace. One instance per flow; {@code seq} is its monotonic step
+ * counter.
  */
 public final class RecordingStepTracer implements StepTracer {
 
-    private final StepTraceStore store;
+    private final TraceStore store;
     private final ContextJsonCodec codec;
     private final String flowId;
     private final String graphId;
     private final String graphVersion;
     private final AtomicLong seq = new AtomicLong();
 
-    public RecordingStepTracer(StepTraceStore store, ContextJsonCodec codec,
+    public RecordingStepTracer(TraceStore store, ContextJsonCodec codec,
                                 String flowId, String graphId, String graphVersion) {
         this.store = store;
         this.codec = codec;
@@ -43,8 +44,8 @@ public final class RecordingStepTracer implements StepTracer {
         StepTraceRecord record = newRecord(nodeId, edge, step, stepIndex, stepInput, startedAtMillis, durationMs);
         ContextJsonCodec.Snapshot output = codec.snapshotMap(rawOutput);
         record.setOutputJson(output.getJson());
-        record.setStatus(StepStatus.OK);
-        store.append(record);
+        record.setStatus(ExecutionStatus.COMPLETED);
+        store.appendStep(record);
     }
 
     @Override
@@ -52,11 +53,11 @@ public final class RecordingStepTracer implements StepTracer {
                              ExecutionContext stepInput, Throwable failure,
                              long startedAtMillis, long durationMs) {
         StepTraceRecord record = newRecord(nodeId, edge, step, stepIndex, stepInput, startedAtMillis, durationMs);
-        record.setStatus(StepStatus.FAILED);
+        record.setStatus(ExecutionStatus.FAILED);
         StringWriter buffer = new StringWriter();
         failure.printStackTrace(new PrintWriter(buffer));
         record.setError(buffer.toString());
-        store.append(record);
+        store.appendStep(record);
     }
 
     private StepTraceRecord newRecord(String nodeId, EdgeDefinition edge, StepDefinition step, int stepIndex,

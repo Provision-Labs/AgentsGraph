@@ -7,7 +7,7 @@ import io.provisionlabs.agentsgraph.config.RoutingStrategy;
 import io.provisionlabs.agentsgraph.config.StepDefinition;
 import io.provisionlabs.agentsgraph.context.ExecutionContext;
 import io.provisionlabs.agentsgraph.engine.AgentsGraphException;
-import io.provisionlabs.agentsgraph.trace.StepStatus;
+import io.provisionlabs.agentsgraph.trace.ExecutionStatus;
 import io.provisionlabs.agentsgraph.trace.StepTraceRecord;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -66,7 +66,7 @@ class AgentsGraphEngineDebugResumeTest {
         List<StepTraceRecord> steps = engine.getStepTraces(initial.getFlowId());
         assertThat(steps).hasSize(2);
         StepTraceRecord failed = steps.get(1);
-        assertThat(failed.getStatus()).isEqualTo(StepStatus.FAILED);
+        assertThat(failed.getStatus()).isEqualTo(ExecutionStatus.FAILED);
         assertThat(failed.getError()).contains("LLM quota exceeded");
         assertThat(failed.getInputContextJson()).contains("documents");
 

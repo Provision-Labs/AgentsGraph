@@ -25,7 +25,7 @@ public final class StepTraceRecord {
     private String processorRef;
     private String inputContextJson;
     private String outputJson;
-    private StepStatus status = StepStatus.OK;
+    private ExecutionStatus status = ExecutionStatus.COMPLETED;
     private String error;
     private boolean restartable = true;
     private long startedAtMillis;
@@ -118,7 +118,7 @@ public final class StepTraceRecord {
     /**
      * The step's RAW output map, before {@code output_to_next}/{@code output_to_save} projection
      * (both projections are deterministic from graph config, so they can be replayed from this).
-     * {@code null} for a {@link StepStatus#FAILED} step.
+     * {@code null} for a {@link ExecutionStatus#FAILED} step.
      */
     public String getOutputJson() {
         return outputJson;
@@ -128,11 +128,16 @@ public final class StepTraceRecord {
         this.outputJson = outputJson;
     }
 
-    public StepStatus getStatus() {
+    /**
+     * Same status vocabulary as the flow-level {@link TraceRecord}: {@link
+     * ExecutionStatus#COMPLETED} for a step that returned, {@link ExecutionStatus#FAILED} for one
+     * that threw.
+     */
+    public ExecutionStatus getStatus() {
         return status;
     }
 
-    public void setStatus(StepStatus status) {
+    public void setStatus(ExecutionStatus status) {
         this.status = status;
     }
 

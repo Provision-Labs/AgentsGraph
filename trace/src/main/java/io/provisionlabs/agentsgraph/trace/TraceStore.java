@@ -33,4 +33,22 @@ public interface TraceStore {
 
     /** Executions matching all of the given filters; a {@code null} filter is treated as "any". */
     List<TraceRecord> query(Set<String> tags, ExecutionStatus status, String tenantId);
+
+    // --- Step-level debug trace ({@link StepTraceRecord}) -------------------------------------
+    // Written only when a flow runs in debug mode; the normal execution path never calls these,
+    // so they add zero overhead to production traffic.
+
+    void appendStep(StepTraceRecord record);
+
+    /** Every recorded step of {@code flowId}, ordered by {@link StepTraceRecord#getSeq()}. */
+    List<StepTraceRecord> findSteps(String flowId);
+
+    Optional<StepTraceRecord> findStep(String flowId, long seq);
+
+    /**
+     * Retention for the (heavyweight) step-level debug trace: deletes step records whose
+     * {@code startedAtMillis} is older; returns how many were removed. Flow-level records are
+     * not touched.
+     */
+    long deleteStepsOlderThan(long startedBeforeEpochMillis);
 }

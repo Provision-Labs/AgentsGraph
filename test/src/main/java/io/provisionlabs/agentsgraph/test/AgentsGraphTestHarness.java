@@ -6,11 +6,10 @@ import io.provisionlabs.agentsgraph.config.jdbc.JdbcProcessorDefinitionStore;
 import io.provisionlabs.agentsgraph.context.ExecutionContext;
 import io.provisionlabs.agentsgraph.engine.Processor;
 import io.provisionlabs.agentsgraph.trace.ContextJsonCodec;
-import io.provisionlabs.agentsgraph.trace.StepStatus;
+import io.provisionlabs.agentsgraph.trace.ExecutionStatus;
 import io.provisionlabs.agentsgraph.trace.StepTraceJson;
 import io.provisionlabs.agentsgraph.trace.StepTraceRecord;
 import io.provisionlabs.agentsgraph.trace.TraceRecord;
-import io.provisionlabs.agentsgraph.trace.jdbc.JdbcStepTraceStore;
 import io.provisionlabs.agentsgraph.trace.jdbc.JdbcTraceStore;
 
 import javax.sql.DataSource;
@@ -70,8 +69,7 @@ public final class AgentsGraphTestHarness {
      */
     public static AgentsGraphTestHarness jdbc(DataSource dataSource) {
         AgentsGraphEngine engine = new AgentsGraphEngine(new JdbcConfigStore(dataSource),
-                new JdbcProcessorDefinitionStore(dataSource), new JdbcTraceStore(dataSource),
-                new JdbcStepTraceStore(dataSource));
+                new JdbcProcessorDefinitionStore(dataSource), new JdbcTraceStore(dataSource));
         return new AgentsGraphTestHarness(engine, dataSource);
     }
 
@@ -154,7 +152,7 @@ public final class AgentsGraphTestHarness {
 
         Map<String, List<Map<String, Object>>> outputsByRef = new LinkedHashMap<>();
         for (StepTraceRecord record : records) {
-            if (record.getStatus() != StepStatus.OK) {
+            if (record.getStatus() != ExecutionStatus.COMPLETED) {
                 continue;
             }
             if (!filter.isEmpty() && !filter.contains(record.getProcessorRef())) {

@@ -313,7 +313,7 @@ later step still needs.
 ## 🐛 Debug Mode: Step-Level Tracing & Resume
 
 Normal tracing records per-node snapshots; **debug mode** goes one level deeper - every *step*
-inside every edge is recorded into the `StepTraceStore` (`agentsgraph_step_trace` when JDBC-backed)
+inside every edge is recorded into the `TraceStore`'s step-level trace (`agentsgraph_step_trace` when JDBC-backed)
 with the FULL context it saw on input, its raw output, timing, and - on failure - the stack trace:
 
 ```java
@@ -350,7 +350,7 @@ What to know before relying on it:
   round-trip exactly; rich POJOs come back as `Map`s on resume.
 - **Version pinning**: each record stores the graph version it ran against; resuming after the
   graph changed logs a warning and executes against the CURRENT graph.
-- **Retention**: `stepTraceStore.deleteOlderThan(epochMillis)` - debug traces are heavyweight by
+- **Retention**: `traceStore.deleteStepsOlderThan(epochMillis)` - debug traces are heavyweight by
   design; clean them up.
 
 ### Dump, inspect, replay
