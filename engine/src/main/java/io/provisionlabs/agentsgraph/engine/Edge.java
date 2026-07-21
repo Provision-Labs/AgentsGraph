@@ -42,24 +42,48 @@ public final class Edge {
     }
 
     public EdgeResult execute(ExecutionContext context) {
+        return execute(context, null, StepTracer.NOOP);
+    }
+
+    public EdgeResult execute(ExecutionContext context, String nodeId, StepTracer tracer) {
+        return executeFrom(0, context, nodeId, tracer);
+    }
+
+    /**
+     * Runs the step pipeline starting at {@code startStepIndex} (0 = full run) - the resume entry
+     * point: the caller restores the context from the recorded input snapshot of the step at
+     * {@code startStepIndex} and re-executes from exactly there. Earlier steps are skipped
+     * entirely, so only the outputs of the executed steps feed this edge's {@code output_mapping}.
+     */
+    public EdgeResult executeFrom(int startStepIndex, ExecutionContext context, String nodeId, StepTracer tracer) {
+        List<StepDefinition> steps = definition.getSteps();
+        if (startStepIndex < 0 || (startStepIndex != 0 && startStepIndex >= steps.size())) {
+            throw new AgentsGraphException("Edge '" + definition.getId() + "' has no step index "
+                    + startStepIndex + " (steps: " + steps.size() + ")");
+        }
         Map<String, Object> pipelineOutput = new LinkedHashMap<>();
         Map<String, Object> savedOutputs = new LinkedHashMap<>();
         Map<String, Object> stepInput = Map.of();
 
-        for (StepDefinition step : definition.getSteps()) {
+        for (int i = startStepIndex; i < steps.size(); i++) {
+            StepDefinition step = steps.get(i);
             Processor processor = processorRegistry.resolve(step.getProcessorRef());
             ExecutionContext stepContext = stepInput.isEmpty() ? context : context.withMergedState(stepInput);
 
+            long startedAt = System.currentTimeMillis();
+            long startNanos = System.nanoTime();
             Map<String, Object> stepOutput;
             try {
                 stepOutput = processor.execute(stepContext, step);
             } catch (RuntimeException e) {
+                tracer.stepFailed(nodeId, definition, step, i, stepContext, e, startedAt, elapsedMs(startNanos));
                 throw new AgentsGraphException(
                         "Edge '" + definition.getId() + "' failed at step '" + step.getId() + "'", e);
             }
             if (stepOutput == null) {
                 stepOutput = Map.of();
             }
+            tracer.stepSucceeded(nodeId, definition, step, i, stepContext, stepOutput, startedAt, elapsedMs(startNanos));
 
             pipelineOutput.putAll(stepOutput);
             stepInput = projectForward(stepOutput, step.getOutputToNext());
@@ -78,6 +102,10 @@ public final class Edge {
 
         ExecutionContext updatedContext = context.withMergedState(mappedState);
         return new EdgeResult(updatedContext, definition.getTagsToAdd(), savedOutputs);
+    }
+
+    private static long elapsedMs(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000_000;
     }
 
     /** {@code outputToNext}: opt-out projection - an empty/absent list forwards everything. */

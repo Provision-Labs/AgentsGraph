@@ -103,6 +103,28 @@ class AgentsGraphTestHarnessTest {
     }
 
     @Test
+    void debugRunRecordsStepTracesAndResumesFromAFailedStep() {
+        AgentsGraphTestHarness harness = jdbcHarness();
+        harness.mockProcessor("ext-service", Map.of("result", "canned"));
+        harness.mockProcessor("fallback", Map.of("answer", "unused"));
+
+        ExecutionContext result = harness.executeDebug("harness-graph", Map.of("mode", "ext"));
+
+        // Every step of the debug run is persisted (JDBC store) with its input and raw output.
+        assertThat(harness.stepTraces(result)).isNotEmpty();
+        assertThat(harness.stepTraces(result).get(0).getOutputJson()).contains("canned");
+
+        // Resume the flow from its first step on the recorded data - with a DIFFERENT mock, to
+        // prove the resumed run re-executes the step rather than replaying the old answer.
+        MockProcessor secondTry = harness.mockProcessor("ext-service", Map.of("result", "resumed"));
+        ExecutionContext resumed = harness.resumeFrom(result.getFlowId(), 0);
+
+        assertThat(resumed.getAccumulatedState()).containsEntry("result", "resumed");
+        assertThat(secondTry.invocationCount()).isEqualTo(1);
+        assertThat(resumed.getMetadata()).containsEntry("parent_flow_id", result.getFlowId());
+    }
+
+    @Test
     void runSqlScriptRequiresAJdbcHarness() {
         assertThatThrownBy(() -> AgentsGraphTestHarness.inMemory().runSqlScript("/sql/harness-test-graph.sql"))
                 .isInstanceOf(IllegalStateException.class)
