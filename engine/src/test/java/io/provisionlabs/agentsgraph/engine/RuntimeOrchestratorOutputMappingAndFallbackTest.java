@@ -109,6 +109,113 @@ class RuntimeOrchestratorOutputMappingAndFallbackTest {
     }
 
     @Test
+    void throwingDelegateRoutesToFallbackEdgeAndFinishesAsErrorWithTheCauseRecorded() {
+        InMemoryConfigStore configStore = new InMemoryConfigStore();
+        ProcessorRegistry processorRegistry = new ProcessorRegistry();
+        RoutingDelegateRegistry delegateRegistry = new RoutingDelegateRegistry();
+        TraceStore traceStore = new InMemoryTraceStore();
+
+        delegateRegistry.register("doc-classifier", (context, config) -> {
+            throw new IllegalStateException("classifier HTTP 503");
+        });
+        processorRegistry.register("error-answer", (context, step) ->
+                Map.of("answer", "Sorry: " + context.getAccumulatedState().get("pipeline_error")));
+
+        NodeDefinition classifierNode = NodeDefinition.builder("intent_router")
+                .routingStrategy(RoutingStrategy.CLASSIFICATOR)
+                .routingDelegate(new RoutingDelegateConfig("model_service", "doc-classifier", Map.of(), 1000))
+                .fallbackEdgeId("edge_error_fallback")
+                .build();
+        EdgeDefinition fallbackEdge = EdgeDefinition.builder("edge_error_fallback")
+                .step(new StepDefinition("s0", "error-answer", Map.of()))
+                .build();
+        configStore.putGraph(GraphDefinition.builder("g4", "v1")
+                .entryNodeId("intent_router").node(classifierNode).edge(fallbackEdge).build());
+
+        RuntimeOrchestrator orchestrator = newOrchestrator(configStore, processorRegistry, delegateRegistry, traceStore);
+        ExecutionContext initialContext = ExecutionContext.newFlow(Map.of(), Map.of());
+        ExecutionContext result = orchestrator.run("g4", initialContext);
+
+        // Routing itself fell back, so the flow is an ERROR - never COMPLETED - and the
+        // delegate's exception (previously lost inside Node) is preserved: its reason lands in
+        // pipeline_error and its full stack trace in the trace record's error field.
+        assertThat(result.getAccumulatedState().get("answer")).asString()
+                .startsWith("Sorry: routing delegate failed: classifier HTTP 503");
+        assertThat(traceStore.find(initialContext.getFlowId()).orElseThrow().getStatus())
+                .isEqualTo(ExecutionStatus.ERROR);
+        assertThat(traceStore.find(initialContext.getFlowId()).orElseThrow().getError())
+                .contains("Node 'intent_router' routing fell back to edge 'edge_error_fallback'")
+                .contains("routing delegate failed: classifier HTTP 503")
+                .contains("IllegalStateException: classifier HTTP 503");
+    }
+
+    @Test
+    void noMatchingRuleRoutesToFallbackEdgeAndFinishesAsError() {
+        InMemoryConfigStore configStore = new InMemoryConfigStore();
+        ProcessorRegistry processorRegistry = new ProcessorRegistry();
+        RoutingDelegateRegistry delegateRegistry = new RoutingDelegateRegistry();
+        TraceStore traceStore = new InMemoryTraceStore();
+
+        processorRegistry.register("error-answer", (context, step) ->
+                Map.of("answer", "Sorry: " + context.getAccumulatedState().get("pipeline_error")));
+
+        NodeDefinition entryNode = NodeDefinition.builder("entry")
+                .routingStrategy(RoutingStrategy.RULES)
+                .routingRule("kind==known", "edge_known")
+                .fallbackEdgeId("edge_error_fallback")
+                .build();
+        EdgeDefinition knownEdge = EdgeDefinition.builder("edge_known").build();
+        EdgeDefinition fallbackEdge = EdgeDefinition.builder("edge_error_fallback")
+                .step(new StepDefinition("s0", "error-answer", Map.of()))
+                .build();
+        configStore.putGraph(GraphDefinition.builder("g5", "v1")
+                .entryNodeId("entry").node(entryNode).edge(knownEdge).edge(fallbackEdge).build());
+
+        RuntimeOrchestrator orchestrator = newOrchestrator(configStore, processorRegistry, delegateRegistry, traceStore);
+        ExecutionContext initialContext = ExecutionContext.newFlow(Map.of("kind", "unknown"), Map.of());
+        ExecutionContext result = orchestrator.run("g5", initialContext);
+
+        assertThat(result.getAccumulatedState().get("answer")).asString()
+                .startsWith("Sorry: no routing_table rule matched");
+        assertThat(traceStore.find(initialContext.getFlowId()).orElseThrow().getStatus())
+                .isEqualTo(ExecutionStatus.ERROR);
+        assertThat(traceStore.find(initialContext.getFlowId()).orElseThrow().getError())
+                .contains("Node 'entry' routing fell back to edge 'edge_error_fallback'")
+                .contains("no routing_table rule matched");
+    }
+
+    @Test
+    void throwingDelegateWithNoFallbackPropagatesWithTheCauseAttached() {
+        InMemoryConfigStore configStore = new InMemoryConfigStore();
+        ProcessorRegistry processorRegistry = new ProcessorRegistry();
+        RoutingDelegateRegistry delegateRegistry = new RoutingDelegateRegistry();
+        TraceStore traceStore = new InMemoryTraceStore();
+
+        delegateRegistry.register("doc-classifier", (context, config) -> {
+            throw new IllegalStateException("classifier HTTP 503");
+        });
+
+        NodeDefinition classifierNode = NodeDefinition.builder("intent_router")
+                .routingStrategy(RoutingStrategy.CLASSIFICATOR)
+                .routingDelegate(new RoutingDelegateConfig("model_service", "doc-classifier", Map.of(), 1000))
+                .build();
+        configStore.putGraph(GraphDefinition.builder("g6", "v1")
+                .entryNodeId("intent_router").node(classifierNode).build());
+
+        RuntimeOrchestrator orchestrator = newOrchestrator(configStore, processorRegistry, delegateRegistry, traceStore);
+        ExecutionContext initialContext = ExecutionContext.newFlow(Map.of(), Map.of());
+
+        assertThatThrownBy(() -> orchestrator.run("g6", initialContext))
+                .isInstanceOf(AgentsGraphException.class)
+                .hasMessageContaining("routing delegate failed: classifier HTTP 503")
+                .hasCauseInstanceOf(IllegalStateException.class);
+        assertThat(traceStore.find(initialContext.getFlowId()).orElseThrow().getStatus())
+                .isEqualTo(ExecutionStatus.FAILED);
+        assertThat(traceStore.find(initialContext.getFlowId()).orElseThrow().getError())
+                .contains("IllegalStateException: classifier HTTP 503");
+    }
+
+    @Test
     void edgeFailureWithNoFallbackConfiguredStillPropagates() {
         InMemoryConfigStore configStore = new InMemoryConfigStore();
         ProcessorRegistry processorRegistry = new ProcessorRegistry();

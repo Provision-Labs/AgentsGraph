@@ -104,6 +104,33 @@ public final class RuntimeOrchestrator {
                 RoutingDecision decision = node.route(context);
                 context = applyOutputMapping(context, nodeDefinition, decision);
 
+                // Routing itself falling back (no rule matched / the delegate threw or returned
+                // nothing) is a failure too: the flow abandons its intended path just like an
+                // edge-step failure, so it gets the same observability - SLF4J log with the
+                // preserved cause, error persisted into the trace, and a final status of ERROR.
+                if (decision.getSource() == RoutingSource.FALLBACK) {
+                    String reason = decision.getFailureReason() == null
+                            ? "routing fell back" : decision.getFailureReason();
+                    if (decision.getFailure() != null) {
+                        log.error("Flow '{}' (graph '{}'): node '{}' routing fell back to edge '{}' - {}",
+                                initialContext.getFlowId(), graphId, nodeDefinition.getId(),
+                                decision.getNextEdgeId(), reason, decision.getFailure());
+                        traceStore.recordError(initialContext.getFlowId(),
+                                "Node '" + nodeDefinition.getId() + "' routing fell back to edge '"
+                                        + decision.getNextEdgeId() + "': " + reason
+                                        + System.lineSeparator() + stackTraceOf(decision.getFailure()));
+                    } else {
+                        log.error("Flow '{}' (graph '{}'): node '{}' routing fell back to edge '{}' - {}",
+                                initialContext.getFlowId(), graphId, nodeDefinition.getId(),
+                                decision.getNextEdgeId(), reason);
+                        traceStore.recordError(initialContext.getFlowId(),
+                                "Node '" + nodeDefinition.getId() + "' routing fell back to edge '"
+                                        + decision.getNextEdgeId() + "': " + reason);
+                    }
+                    fellBack = true;
+                    context = context.withMergedState(Map.of("pipeline_error", reason));
+                }
+
                 EdgeDefinition edgeDefinition = graph.getEdge(decision.getNextEdgeId());
                 Edge edge = new Edge(edgeDefinition, processorRegistry);
 

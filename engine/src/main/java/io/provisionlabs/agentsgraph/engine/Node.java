@@ -40,7 +40,7 @@ public final class Node {
         if (edgeId.isPresent()) {
             return new RoutingDecision(edgeId.get(), 1.0, RoutingSource.RULES);
         }
-        return fallbackOrThrow("no routing_table rule matched");
+        return fallbackOrThrow("no routing_table rule matched", null);
     }
 
     private RoutingDecision routeByDelegate(ExecutionContext context) {
@@ -51,16 +51,20 @@ public final class Node {
                 return new RoutingDecision(
                         result.getEdgeId(), result.getConfidence(), RoutingSource.DELEGATE, result.getRaw());
             }
-            return fallbackOrThrow("routing delegate returned no edge_id");
+            return fallbackOrThrow("routing delegate returned no edge_id", null);
         } catch (RuntimeException e) {
-            return fallbackOrThrow("routing delegate failed: " + e.getMessage());
+            // Preserve the delegate's exception in the decision (or as the cause when there is no
+            // fallback) - it must not be lost in wrapper layers; the orchestrator logs it and
+            // persists its stack trace into the trace record's error field.
+            return fallbackOrThrow("routing delegate failed: " + e.getMessage(), e);
         }
     }
 
-    private RoutingDecision fallbackOrThrow(String reason) {
+    private RoutingDecision fallbackOrThrow(String reason, Throwable failure) {
         if (definition.getFallbackEdgeId() != null) {
-            return new RoutingDecision(definition.getFallbackEdgeId(), 0.0, RoutingSource.FALLBACK);
+            return RoutingDecision.fallback(definition.getFallbackEdgeId(), reason, failure);
         }
-        throw new AgentsGraphException("Node '" + definition.getId() + "' could not route context: " + reason);
+        throw new AgentsGraphException(
+                "Node '" + definition.getId() + "' could not route context: " + reason, failure);
     }
 }
