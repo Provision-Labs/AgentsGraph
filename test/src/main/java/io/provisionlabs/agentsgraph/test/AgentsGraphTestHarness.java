@@ -5,14 +5,20 @@ import io.provisionlabs.agentsgraph.config.jdbc.JdbcConfigStore;
 import io.provisionlabs.agentsgraph.config.jdbc.JdbcProcessorDefinitionStore;
 import io.provisionlabs.agentsgraph.context.ExecutionContext;
 import io.provisionlabs.agentsgraph.engine.Processor;
+import io.provisionlabs.agentsgraph.trace.ContextJsonCodec;
+import io.provisionlabs.agentsgraph.trace.StepStatus;
+import io.provisionlabs.agentsgraph.trace.StepTraceJson;
 import io.provisionlabs.agentsgraph.trace.StepTraceRecord;
 import io.provisionlabs.agentsgraph.trace.TraceRecord;
 import io.provisionlabs.agentsgraph.trace.jdbc.JdbcStepTraceStore;
 import io.provisionlabs.agentsgraph.trace.jdbc.JdbcTraceStore;
 
 import javax.sql.DataSource;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Test kit for running a real graph with selected processors replaced by mocks - the system's
@@ -120,6 +126,48 @@ public final class AgentsGraphTestHarness {
 
     public List<StepTraceRecord> stepTraces(String flowId) {
         return engine.getStepTraces(flowId);
+    }
+
+    /** The flow's step trace as a self-contained JSON dump - see {@link #mocksFromDump}. */
+    public String stepTraceDump(String flowId) {
+        return getEngine().dumpStepTraces(flowId);
+    }
+
+    /**
+     * Turns a step-trace dump (from {@code engine.dumpStepTraces} / {@link #stepTraceDump} of a
+     * debug run - possibly against a PRODUCTION database) into replay mocks: for every processor
+     * ref that succeeded in the dump, registers a {@link MockProcessor#returningSequence} that
+     * answers with the recorded outputs in the recorded order. Re-executing the graph then
+     * reproduces the original run's external-service answers with zero network - the recorded
+     * failure, if any, is deliberately NOT replayed, so a test can assert what happens after the
+     * fix while every upstream answer stays exactly as it was.
+     *
+     * <p>Pass {@code onlyRefs} to mock just the named processors (typically the external-service
+     * steps) and leave the rest real.
+     *
+     * @return the registered mocks by processor ref, for invocation asserts
+     */
+    public Map<String, MockProcessor> mocksFromDump(String dumpJson, String... onlyRefs) {
+        List<StepTraceRecord> records = StepTraceJson.fromJson(dumpJson);
+        Set<String> filter = Set.of(onlyRefs);
+        ContextJsonCodec codec = new ContextJsonCodec();
+
+        Map<String, List<Map<String, Object>>> outputsByRef = new LinkedHashMap<>();
+        for (StepTraceRecord record : records) {
+            if (record.getStatus() != StepStatus.OK) {
+                continue;
+            }
+            if (!filter.isEmpty() && !filter.contains(record.getProcessorRef())) {
+                continue;
+            }
+            outputsByRef.computeIfAbsent(record.getProcessorRef(), ref -> new ArrayList<>())
+                    .add(codec.readMap(record.getOutputJson()));
+        }
+
+        Map<String, MockProcessor> mocks = new LinkedHashMap<>();
+        outputsByRef.forEach((ref, outputs) ->
+                mocks.put(ref, registerProcessor(ref, MockProcessor.returningSequence(outputs))));
+        return mocks;
     }
 
     /** Resumes a debug-traced flow from step {@code seq} on exactly the recorded input data. */

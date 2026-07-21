@@ -25,8 +25,11 @@ import io.provisionlabs.agentsgraph.engine.RuntimeOrchestrator;
 import io.provisionlabs.agentsgraph.trace.ContextJsonCodec;
 import io.provisionlabs.agentsgraph.trace.InMemoryStepTraceStore;
 import io.provisionlabs.agentsgraph.trace.InMemoryTraceStore;
+import io.provisionlabs.agentsgraph.trace.StepStatus;
+import io.provisionlabs.agentsgraph.trace.StepTraceJson;
 import io.provisionlabs.agentsgraph.trace.StepTraceRecord;
 import io.provisionlabs.agentsgraph.trace.StepTraceStore;
+import io.provisionlabs.agentsgraph.trace.TraceRecord;
 import io.provisionlabs.agentsgraph.trace.TraceStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -258,6 +261,62 @@ public final class AgentsGraphEngine {
     /** The recorded step-level debug trace of {@code flowId}, ordered by execution ({@code seq}). */
     public List<StepTraceRecord> getStepTraces(String flowId) {
         return stepTraceStore.findByFlow(flowId);
+    }
+
+    /**
+     * The flow's step-level debug trace as a self-contained, pretty-printed JSON document -
+     * attach it to a bug report or feed it to the {@code agentsgraph-test} harness
+     * ({@code harness.mocksFromDump}) to replay the flow anywhere with the recorded
+     * external-service answers.
+     */
+    public String dumpStepTraces(String flowId) {
+        return StepTraceJson.toJson(stepTraceStore.findByFlow(flowId));
+    }
+
+    /**
+     * Human-readable one-flow report: overall status/tags/error from the {@link TraceStore} plus
+     * a step-by-step table from the {@link StepTraceStore} (when the flow ran in debug mode).
+     * This is deliberately plain text - the intended "show me this flow" payload for whatever
+     * ops surface the application already has (an admin endpoint, an actuator, a CLI).
+     */
+    public String describeFlow(String flowId) {
+        StringBuilder report = new StringBuilder();
+        TraceRecord trace = traceStore.find(flowId).orElse(null);
+        if (trace == null) {
+            report.append("Flow '").append(flowId).append("': no trace record found\n");
+        } else {
+            report.append("Flow '").append(flowId).append("': status ").append(trace.getStatus());
+            if (!trace.getTags().isEmpty()) {
+                report.append(", tags ").append(trace.getTags());
+            }
+            report.append('\n');
+            if (trace.getError() != null && !trace.getError().isEmpty()) {
+                report.append("error: ").append(firstLineOf(trace.getError())).append('\n');
+            }
+        }
+
+        List<StepTraceRecord> steps = stepTraceStore.findByFlow(flowId);
+        if (steps.isEmpty()) {
+            report.append("(no step traces - the flow was not run in debug mode)\n");
+            return report.toString();
+        }
+        report.append(String.format("%-5s %-18s %-22s %-14s %-22s %-7s %8s %-4s%n",
+                "seq", "node", "edge", "step", "processor", "status", "ms", "restartable"));
+        for (StepTraceRecord step : steps) {
+            report.append(String.format("%-5d %-18s %-22s %-14s %-22s %-7s %8d %-4s%n",
+                    step.getSeq(), step.getNodeId(), step.getEdgeId(), step.getStepId(),
+                    step.getProcessorRef(), step.getStatus(), step.getDurationMs(),
+                    step.isRestartable() ? "yes" : "NO"));
+            if (step.getStatus() == StepStatus.FAILED && step.getError() != null) {
+                report.append("      error: ").append(firstLineOf(step.getError())).append('\n');
+            }
+        }
+        return report.toString();
+    }
+
+    private static String firstLineOf(String text) {
+        int newline = text.indexOf('\n');
+        return (newline < 0 ? text : text.substring(0, newline)).trim();
     }
 
     /** Resumes {@code flowId} from step {@code seq} on exactly the data that step originally saw. */

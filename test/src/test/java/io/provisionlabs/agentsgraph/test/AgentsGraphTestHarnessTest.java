@@ -125,6 +125,43 @@ class AgentsGraphTestHarnessTest {
     }
 
     @Test
+    void aDumpFromOneHarnessReplaysTheRecordedAnswersInAnother() {
+        // "Production": a debug run records the external service's real answer.
+        AgentsGraphTestHarness recording = jdbcHarness();
+        recording.mockProcessor("ext-service", Map.of("result", "recorded-answer"));
+        recording.mockProcessor("fallback", Map.of("answer", "unused"));
+        ExecutionContext original = recording.executeDebug("harness-graph", Map.of("mode", "ext"));
+
+        String dump = recording.stepTraceDump(original.getFlowId());
+
+        // "Local": a fresh harness replays the dump - the recorded answers come back without the
+        // original mocks (or, in real life, without the original external services).
+        AgentsGraphTestHarness replaying = jdbcHarness();
+        Map<String, MockProcessor> replayMocks = replaying.mocksFromDump(dump);
+        replaying.mockProcessor("fallback", Map.of("answer", "unused"));
+
+        ExecutionContext replayed = replaying.execute("harness-graph", Map.of("mode", "ext"));
+
+        assertThat(replayed.getAccumulatedState()).containsEntry("result", "recorded-answer");
+        assertThat(replayMocks).containsKey("ext-service");
+        assertThat(replayMocks.get("ext-service").invocationCount()).isEqualTo(1);
+    }
+
+    @Test
+    void mocksFromDumpCanBeLimitedToNamedRefs() {
+        AgentsGraphTestHarness recording = jdbcHarness();
+        recording.mockProcessor("ext-service", Map.of("result", "recorded-answer"));
+        recording.mockProcessor("fallback", Map.of("answer", "unused"));
+        ExecutionContext original = recording.executeDebug("harness-graph", Map.of("mode", "ext"));
+
+        AgentsGraphTestHarness replaying = jdbcHarness();
+        Map<String, MockProcessor> mocks = replaying.mocksFromDump(
+                recording.stepTraceDump(original.getFlowId()), "some-other-ref");
+
+        assertThat(mocks).isEmpty();
+    }
+
+    @Test
     void runSqlScriptRequiresAJdbcHarness() {
         assertThatThrownBy(() -> AgentsGraphTestHarness.inMemory().runSqlScript("/sql/harness-test-graph.sql"))
                 .isInstanceOf(IllegalStateException.class)
