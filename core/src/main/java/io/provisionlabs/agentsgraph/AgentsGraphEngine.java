@@ -22,12 +22,19 @@ import io.provisionlabs.agentsgraph.engine.ProcessorRegistry;
 import io.provisionlabs.agentsgraph.engine.RoutingDelegate;
 import io.provisionlabs.agentsgraph.engine.RoutingDelegateRegistry;
 import io.provisionlabs.agentsgraph.engine.RuntimeOrchestrator;
+import io.provisionlabs.agentsgraph.trace.ContextJsonCodec;
+import io.provisionlabs.agentsgraph.trace.InMemoryStepTraceStore;
 import io.provisionlabs.agentsgraph.trace.InMemoryTraceStore;
+import io.provisionlabs.agentsgraph.trace.StepTraceRecord;
+import io.provisionlabs.agentsgraph.trace.StepTraceStore;
 import io.provisionlabs.agentsgraph.trace.TraceStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
@@ -56,9 +63,13 @@ import java.util.concurrent.ForkJoinPool;
  */
 public final class AgentsGraphEngine {
 
+    private static final Logger log = LoggerFactory.getLogger(AgentsGraphEngine.class);
+
     private final ConfigStore configStore;
     private final ProcessorDefinitionStore processorDefinitionStore;
     private final TraceStore traceStore;
+    private final StepTraceStore stepTraceStore;
+    private final ContextJsonCodec contextCodec = new ContextJsonCodec();
     private final ProcessorRegistry processorRegistry;
     private final RoutingDelegateRegistry delegateRegistry;
     private final OutputSink outputSink;
@@ -98,22 +109,47 @@ public final class AgentsGraphEngine {
     }
 
     /**
+     * Store-driven constructor additionally taking a persistent {@link StepTraceStore} (e.g. a
+     * {@code JdbcStepTraceStore}) so debug-mode step traces survive restarts and flows can be
+     * resumed from another process. The other constructors default to an
+     * {@link InMemoryStepTraceStore} - {@link #executeDebug}/{@link #resumeFrom} work out of the
+     * box, but only within the process that ran the flow.
+     */
+    public AgentsGraphEngine(ConfigStore configStore, ProcessorDefinitionStore processorDefinitionStore,
+                              TraceStore traceStore, StepTraceStore stepTraceStore) {
+        this(configStore, processorDefinitionStore, traceStore, new ProcessorRegistry(),
+                new RoutingDelegateRegistry(), NoopOutputSink.INSTANCE, ForkJoinPool.commonPool(),
+                stepTraceStore);
+    }
+
+    /**
      * Full constructor, also taking the registries, {@link OutputSink} and async {@link Executor}.
-     * Prefer {@link #inMemory()} or the three-store constructor unless you need a custom
+     * Prefer {@link #inMemory()} or the store-driven constructors unless you need a custom
      * combination.
      */
     public AgentsGraphEngine(ConfigStore configStore, ProcessorDefinitionStore processorDefinitionStore,
                               TraceStore traceStore, ProcessorRegistry processorRegistry,
                               RoutingDelegateRegistry delegateRegistry, OutputSink outputSink,
                               Executor asyncExecutor) {
+        this(configStore, processorDefinitionStore, traceStore, processorRegistry, delegateRegistry,
+                outputSink, asyncExecutor, new InMemoryStepTraceStore());
+    }
+
+    /** Full constructor including the {@link StepTraceStore} backing debug-mode step tracing. */
+    public AgentsGraphEngine(ConfigStore configStore, ProcessorDefinitionStore processorDefinitionStore,
+                              TraceStore traceStore, ProcessorRegistry processorRegistry,
+                              RoutingDelegateRegistry delegateRegistry, OutputSink outputSink,
+                              Executor asyncExecutor, StepTraceStore stepTraceStore) {
         this.configStore = configStore;
         this.processorDefinitionStore = processorDefinitionStore;
         this.traceStore = traceStore;
+        this.stepTraceStore = Objects.requireNonNull(stepTraceStore, "stepTraceStore");
         this.processorRegistry = processorRegistry;
         this.delegateRegistry = delegateRegistry;
         this.outputSink = outputSink;
         this.orchestrator = new RuntimeOrchestrator(
-                configStore, traceStore, processorRegistry, delegateRegistry, outputSink, asyncExecutor);
+                configStore, traceStore, processorRegistry, delegateRegistry, outputSink, asyncExecutor,
+                stepTraceStore);
         this.controlPlane = new DefaultControlPlane(traceStore);
     }
 
@@ -207,6 +243,74 @@ public final class AgentsGraphEngine {
         return orchestrator.runAsync(graphId, initialContext);
     }
 
+    /**
+     * Runs the graph in DEBUG mode: every step's full input context and raw output are recorded
+     * into the {@link StepTraceStore} (see {@link #getStepTraces}), making the flow inspectable
+     * after the fact and resumable from any recorded step via {@link #resumeFrom}. Equivalent to
+     * {@link #execute} with {@code metadata[agentsgraph_debug]=true}.
+     */
+    public ExecutionContext executeDebug(String graphId, ExecutionContext initialContext) {
+        ensureLoaded();
+        return orchestrator.run(graphId,
+                initialContext.withMergedMetadata(Map.of(RuntimeOrchestrator.DEBUG_METADATA_KEY, true)));
+    }
+
+    /** The recorded step-level debug trace of {@code flowId}, ordered by execution ({@code seq}). */
+    public List<StepTraceRecord> getStepTraces(String flowId) {
+        return stepTraceStore.findByFlow(flowId);
+    }
+
+    /** Resumes {@code flowId} from step {@code seq} on exactly the data that step originally saw. */
+    public ExecutionContext resumeFrom(String flowId, long seq) {
+        return resumeFrom(flowId, seq, Map.of());
+    }
+
+    /**
+     * Resumes a debug-traced flow from a recorded step: restores the context from the step's
+     * recorded input snapshot, applies {@code stateOverrides} on top of {@code accumulated_state}
+     * (e.g. a corrected value when debugging bad data), and re-executes the graph from exactly
+     * that step - earlier steps don't run again. The resumed run is a NEW flow (its metadata
+     * carries {@code parent_flow_id}/{@code resumed_from_seq} for lineage) and runs in debug mode
+     * itself, so it can be resumed again.
+     *
+     * <p>Everything from the resume point on executes live (delegates/LLMs may answer
+     * differently than in the original run); replaying recorded answers is what the
+     * {@code agentsgraph-test} mock harness is for.
+     */
+    public ExecutionContext resumeFrom(String flowId, long seq, Map<String, Object> stateOverrides) {
+        StepTraceRecord record = stepTraceStore.find(flowId, seq)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "No step trace for flow '" + flowId + "' seq " + seq
+                                + " - was the flow executed in debug mode (executeDebug)?"));
+        if (!record.isRestartable()) {
+            throw new IllegalStateException("Step trace flow '" + flowId + "' seq " + seq
+                    + " is not restartable: its input snapshot dropped or truncated a value"
+                    + " (see ContextJsonCodec markers in the snapshot)");
+        }
+        GraphDefinition graph = configStore.getGraph(record.getGraphId());
+        if (!Objects.equals(graph.getVersion(), record.getGraphVersion())) {
+            log.warn("Resuming flow '{}' seq {} recorded against graph '{}' version '{}', but the deployed"
+                            + " version is now '{}' - the resumed run executes against the CURRENT graph",
+                    flowId, seq, record.getGraphId(), record.getGraphVersion(), graph.getVersion());
+        }
+
+        ContextJsonCodec.DecodedContext decoded = contextCodec.readContext(record.getInputContextJson());
+        Map<String, Object> metadata = new LinkedHashMap<>(decoded.getMetadata());
+        metadata.put("parent_flow_id", flowId);
+        metadata.put("resumed_from_seq", seq);
+        metadata.put(RuntimeOrchestrator.DEBUG_METADATA_KEY, true);
+
+        ExecutionContext context = ExecutionContext.newFlow(decoded.getInputData(), metadata)
+                .withMergedState(decoded.getAccumulatedState());
+        if (stateOverrides != null && !stateOverrides.isEmpty()) {
+            context = context.withMergedState(stateOverrides);
+        }
+
+        ensureLoaded();
+        return orchestrator.resume(record.getGraphId(), context,
+                record.getNodeId(), record.getEdgeId(), record.getStepIndex());
+    }
+
     /** Serializes the currently-deployed revision of {@code graphId} back to graph JSON, for verification. */
     public String dumpGraphJson(String graphId) {
         return GraphJsonMapper.toJson(configStore.getGraph(graphId));
@@ -222,6 +326,10 @@ public final class AgentsGraphEngine {
 
     public TraceStore getTraceStore() {
         return traceStore;
+    }
+
+    public StepTraceStore getStepTraceStore() {
+        return stepTraceStore;
     }
 
     public ControlPlane getControlPlane() {

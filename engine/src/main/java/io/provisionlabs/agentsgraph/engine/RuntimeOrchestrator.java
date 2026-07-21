@@ -5,9 +5,11 @@ import io.provisionlabs.agentsgraph.config.EdgeDefinition;
 import io.provisionlabs.agentsgraph.config.GraphDefinition;
 import io.provisionlabs.agentsgraph.config.NodeDefinition;
 import io.provisionlabs.agentsgraph.context.ExecutionContext;
+import io.provisionlabs.agentsgraph.trace.ContextJsonCodec;
 import io.provisionlabs.agentsgraph.trace.ExecutionEvent;
 import io.provisionlabs.agentsgraph.trace.ExecutionStatus;
 import io.provisionlabs.agentsgraph.trace.RoutingOutcome;
+import io.provisionlabs.agentsgraph.trace.StepTraceStore;
 import io.provisionlabs.agentsgraph.trace.TraceStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,6 +60,13 @@ import java.util.concurrent.ForkJoinPool;
  */
 public final class RuntimeOrchestrator {
 
+    /**
+     * Metadata key switching a flow into debug mode ({@code true}/"true"): every step's input
+     * context and raw output are recorded into the {@link StepTraceStore} (if one is wired in),
+     * enabling post-mortem inspection and {@link #resume}.
+     */
+    public static final String DEBUG_METADATA_KEY = "agentsgraph_debug";
+
     private static final Logger log = LoggerFactory.getLogger(RuntimeOrchestrator.class);
 
     private final ConfigStore configStore;
@@ -66,7 +75,9 @@ public final class RuntimeOrchestrator {
     private final RoutingDelegateRegistry delegateRegistry;
     private final OutputSink outputSink;
     private final Executor asyncExecutor;
+    private final StepTraceStore stepTraceStore;
     private final ConditionEngine conditionEngine = new ConditionEngine();
+    private final ContextJsonCodec contextCodec = new ContextJsonCodec();
 
     public RuntimeOrchestrator(ConfigStore configStore, TraceStore traceStore,
                                 ProcessorRegistry processorRegistry, RoutingDelegateRegistry delegateRegistry) {
@@ -77,32 +88,81 @@ public final class RuntimeOrchestrator {
     public RuntimeOrchestrator(ConfigStore configStore, TraceStore traceStore,
                                 ProcessorRegistry processorRegistry, RoutingDelegateRegistry delegateRegistry,
                                 OutputSink outputSink, Executor asyncExecutor) {
+        this(configStore, traceStore, processorRegistry, delegateRegistry, outputSink, asyncExecutor, null);
+    }
+
+    /** Full constructor; a non-null {@code stepTraceStore} enables debug-mode step tracing. */
+    public RuntimeOrchestrator(ConfigStore configStore, TraceStore traceStore,
+                                ProcessorRegistry processorRegistry, RoutingDelegateRegistry delegateRegistry,
+                                OutputSink outputSink, Executor asyncExecutor, StepTraceStore stepTraceStore) {
         this.configStore = Objects.requireNonNull(configStore, "configStore");
         this.traceStore = Objects.requireNonNull(traceStore, "traceStore");
         this.processorRegistry = Objects.requireNonNull(processorRegistry, "processorRegistry");
         this.delegateRegistry = Objects.requireNonNull(delegateRegistry, "delegateRegistry");
         this.outputSink = Objects.requireNonNull(outputSink, "outputSink");
         this.asyncExecutor = Objects.requireNonNull(asyncExecutor, "asyncExecutor");
+        this.stepTraceStore = stepTraceStore;
     }
 
     /** Runs {@code graphId} from its entry node to completion, returning the final context snapshot. */
     public ExecutionContext run(String graphId, ExecutionContext initialContext) {
+        return runFlow(graphId, initialContext, null);
+    }
+
+    /**
+     * Resumes a flow mid-edge: starts at step {@code stepIndex} of {@code edgeId} (under
+     * {@code nodeId}, whose {@code fallback_edge_id} still applies) instead of routing from the
+     * graph's entry node, then continues normally. The caller is responsible for restoring
+     * {@code initialContext} from the recorded input snapshot of exactly that step - see
+     * {@code AgentsGraphEngine.resumeFrom}.
+     */
+    public ExecutionContext resume(String graphId, ExecutionContext initialContext,
+                                     String nodeId, String edgeId, int stepIndex) {
+        return runFlow(graphId, initialContext, new ResumePoint(nodeId, edgeId, stepIndex));
+    }
+
+    /** Where a resumed flow re-enters the graph: a specific step of a specific edge. */
+    private static final class ResumePoint {
+        final String nodeId;
+        final String edgeId;
+        final int stepIndex;
+
+        ResumePoint(String nodeId, String edgeId, int stepIndex) {
+            this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
+            this.edgeId = Objects.requireNonNull(edgeId, "edgeId");
+            this.stepIndex = stepIndex;
+        }
+    }
+
+    private ExecutionContext runFlow(String graphId, ExecutionContext initialContext, ResumePoint resume) {
         GraphDefinition graph = configStore.getGraph(graphId);
         String tenantId = String.valueOf(initialContext.getMetadata().get("tenant_id"));
         traceStore.startFlow(initialContext.getFlowId(), tenantId);
+        StepTracer tracer = stepTracerFor(graph, initialContext);
 
         ExecutionContext context = initialContext;
-        String currentNodeId = graph.getEntryNodeId();
+        String currentNodeId = resume != null ? resume.nodeId : graph.getEntryNodeId();
+        ResumePoint pendingResume = resume;
         boolean fellBack = false;
 
         try {
             while (currentNodeId != null) {
                 NodeDefinition nodeDefinition = graph.getNode(currentNodeId);
-                Node node = new Node(nodeDefinition, conditionEngine, delegateRegistry);
 
-                // Plan: evaluate the node's routing table/delegate against the current context.
-                RoutingDecision decision = node.route(context);
-                context = applyOutputMapping(context, nodeDefinition, decision);
+                RoutingDecision decision;
+                int startStepIndex = 0;
+                if (pendingResume != null) {
+                    // Resumed flow: skip routing on the first hop - re-enter the recorded edge at
+                    // the recorded step, on the restored context.
+                    decision = new RoutingDecision(pendingResume.edgeId, 1.0, RoutingSource.RESUME);
+                    startStepIndex = pendingResume.stepIndex;
+                    pendingResume = null;
+                } else {
+                    // Plan: evaluate the node's routing table/delegate against the current context.
+                    Node node = new Node(nodeDefinition, conditionEngine, delegateRegistry);
+                    decision = node.route(context);
+                    context = applyOutputMapping(context, nodeDefinition, decision);
+                }
 
                 // Routing itself falling back (no rule matched / the delegate threw or returned
                 // nothing) is a failure too: the flow abandons its intended path just like an
@@ -138,7 +198,7 @@ public final class RuntimeOrchestrator {
                 // rather than aborting the flow when the edge's own step pipeline throws.
                 EdgeResult edgeResult;
                 try {
-                    edgeResult = edge.execute(context);
+                    edgeResult = edge.executeFrom(startStepIndex, context, nodeDefinition.getId(), tracer);
                 } catch (RuntimeException stepFailure) {
                     String fallbackEdgeId = nodeDefinition.getFallbackEdgeId();
                     if (fallbackEdgeId == null || fallbackEdgeId.equals(edgeDefinition.getId())) {
@@ -153,7 +213,7 @@ public final class RuntimeOrchestrator {
                     edge = new Edge(edgeDefinition, processorRegistry);
                     context = context.withMergedState(Map.of("pipeline_error", String.valueOf(stepFailure.getMessage())));
                     decision = new RoutingDecision(fallbackEdgeId, 0.0, RoutingSource.FALLBACK);
-                    edgeResult = edge.execute(context);
+                    edgeResult = edge.execute(context, nodeDefinition.getId(), tracer);
                 }
                 context = edgeResult.getUpdatedContext();
 
@@ -181,6 +241,24 @@ public final class RuntimeOrchestrator {
             traceStore.updateStatus(initialContext.getFlowId(), ExecutionStatus.FAILED);
             throw e;
         }
+    }
+
+    /**
+     * A {@link RecordingStepTracer} when the flow runs in debug mode (a {@link StepTraceStore}
+     * is wired in AND the context's metadata carries {@link #DEBUG_METADATA_KEY}); {@link
+     * StepTracer#NOOP} otherwise - the normal path never pays for step tracing.
+     */
+    private StepTracer stepTracerFor(GraphDefinition graph, ExecutionContext initialContext) {
+        if (stepTraceStore == null || !isDebug(initialContext)) {
+            return StepTracer.NOOP;
+        }
+        return new RecordingStepTracer(stepTraceStore, contextCodec,
+                initialContext.getFlowId(), graph.getId(), graph.getVersion());
+    }
+
+    private static boolean isDebug(ExecutionContext context) {
+        Object flag = context.getMetadata().get(DEBUG_METADATA_KEY);
+        return Boolean.TRUE.equals(flag) || "true".equalsIgnoreCase(String.valueOf(flag));
     }
 
     /** Full stack trace of {@code failure} as text, for the trace record's {@code error} field. */

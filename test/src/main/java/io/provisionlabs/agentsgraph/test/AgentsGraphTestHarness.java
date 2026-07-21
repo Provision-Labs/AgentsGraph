@@ -5,10 +5,13 @@ import io.provisionlabs.agentsgraph.config.jdbc.JdbcConfigStore;
 import io.provisionlabs.agentsgraph.config.jdbc.JdbcProcessorDefinitionStore;
 import io.provisionlabs.agentsgraph.context.ExecutionContext;
 import io.provisionlabs.agentsgraph.engine.Processor;
+import io.provisionlabs.agentsgraph.trace.StepTraceRecord;
 import io.provisionlabs.agentsgraph.trace.TraceRecord;
+import io.provisionlabs.agentsgraph.trace.jdbc.JdbcStepTraceStore;
 import io.provisionlabs.agentsgraph.trace.jdbc.JdbcTraceStore;
 
 import javax.sql.DataSource;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -61,7 +64,8 @@ public final class AgentsGraphTestHarness {
      */
     public static AgentsGraphTestHarness jdbc(DataSource dataSource) {
         AgentsGraphEngine engine = new AgentsGraphEngine(new JdbcConfigStore(dataSource),
-                new JdbcProcessorDefinitionStore(dataSource), new JdbcTraceStore(dataSource));
+                new JdbcProcessorDefinitionStore(dataSource), new JdbcTraceStore(dataSource),
+                new JdbcStepTraceStore(dataSource));
         return new AgentsGraphTestHarness(engine, dataSource);
     }
 
@@ -98,6 +102,34 @@ public final class AgentsGraphTestHarness {
     /** Runs {@code graphId} with the given input data (the engine lazily loads graph/processors from its stores). */
     public ExecutionContext execute(String graphId, Map<String, Object> inputData) {
         return engine.execute(graphId, ExecutionContext.newFlow(inputData, Map.of()));
+    }
+
+    /**
+     * Runs {@code graphId} in DEBUG mode: every step's input context and raw output land in the
+     * step trace ({@link #stepTraces}), and the flow can be re-run from any step via
+     * {@link #resumeFrom} - including a step that failed, after re-registering a fixed processor.
+     */
+    public ExecutionContext executeDebug(String graphId, Map<String, Object> inputData) {
+        return engine.executeDebug(graphId, ExecutionContext.newFlow(inputData, Map.of()));
+    }
+
+    /** The step-level debug trace of a flow executed via {@link #executeDebug}, in execution order. */
+    public List<StepTraceRecord> stepTraces(ExecutionContext result) {
+        return stepTraces(result.getFlowId());
+    }
+
+    public List<StepTraceRecord> stepTraces(String flowId) {
+        return engine.getStepTraces(flowId);
+    }
+
+    /** Resumes a debug-traced flow from step {@code seq} on exactly the recorded input data. */
+    public ExecutionContext resumeFrom(String flowId, long seq) {
+        return engine.resumeFrom(flowId, seq);
+    }
+
+    /** Same, additionally merging {@code stateOverrides} into the restored accumulated state. */
+    public ExecutionContext resumeFrom(String flowId, long seq, Map<String, Object> stateOverrides) {
+        return engine.resumeFrom(flowId, seq, stateOverrides);
     }
 
     /** The flow's {@link TraceRecord} (status, tags, telemetry) for asserting on the audit trail. */

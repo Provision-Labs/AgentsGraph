@@ -310,6 +310,49 @@ declaratively, and how `output_to_next` between steps of the same edge *replaces
 step sees (an empty/absent list forwards everything) - a step must explicitly re-forward keys a
 later step still needs.
 
+## 🐛 Debug Mode: Step-Level Tracing & Resume
+
+Normal tracing records per-node snapshots; **debug mode** goes one level deeper - every *step*
+inside every edge is recorded into the `StepTraceStore` (`agentsgraph_step_trace` when JDBC-backed)
+with the FULL context it saw on input, its raw output, timing, and - on failure - the stack trace:
+
+```java
+ExecutionContext result = engine.executeDebug("ocr-accounting", context); // or metadata agentsgraph_debug=true
+List<StepTraceRecord> steps = engine.getStepTraces(result.getFlowId());   // execution order (seq)
+```
+
+Because each record's input snapshot is the *complete* context (not a delta), every step is an
+independent restart point. `resumeFrom` rebuilds the context from the recorded snapshot and
+re-enters the graph at exactly that step - earlier steps (e.g. an expensive OCR call) do **not**
+run again:
+
+```java
+// The flow failed at the LLM step? Fix the processor (or the data), then:
+ExecutionContext resumed = engine.resumeFrom(flowId, failedStep.getSeq());
+// ...or resume on corrected data without re-running anything upstream:
+engine.resumeFrom(flowId, seq, Map.of("json", correctedOcrJson));
+```
+
+The resumed run is a NEW flow (metadata carries `parent_flow_id`/`resumed_from_seq` for lineage),
+runs in debug mode itself (so it can be resumed again), and executes everything from the resume
+point **live** - replaying recorded answers instead is what the `agentsgraph-test` mock harness
+is for (`harness.executeDebug` / `harness.stepTraces` / `harness.resumeFrom` wrap the same API).
+
+What to know before relying on it:
+
+- **Zero overhead when off**: a non-debug run never touches the step-trace store - the tracer is
+  a no-op singleton.
+- **Serialization is defensive, per value** (`ContextJsonCodec`): `byte[]` round-trips via base64;
+  a value Jackson can't serialize becomes an `__unserializable__` placeholder; a value over the
+  size limit (1 MB by default) becomes `__truncated__`. Either marker flags the record
+  `restartable=false` - still fully inspectable, but `resumeFrom` refuses it.
+- **Type fidelity**: plain JSON-like values (maps, lists, strings, numbers, booleans, `byte[]`)
+  round-trip exactly; rich POJOs come back as `Map`s on resume.
+- **Version pinning**: each record stores the graph version it ran against; resuming after the
+  graph changed logs a warning and executes against the CURRENT graph.
+- **Retention**: `stepTraceStore.deleteOlderThan(epochMillis)` - debug traces are heavyweight by
+  design; clean them up.
+
 ## 🧪 Testing Without AI APIs
 
 A graph whose steps call LLM/OCR/classification services is still, above the wire, deterministic
