@@ -33,7 +33,7 @@ The core execution loop that maps conceptual Agent phases to technical component
 
 **4️⃣ Status & Trace Store (Observability)**  
 Time-series indexed storage for every execution lifecycle event.
-- Tracking: `flow_id`, `status` (`running|completed|failed|paused`)
+- Tracking: `flow_id`, `status` (`running|completed|error|failed|paused`)
 - Dynamic tagging: `tags: ["vip", "billing", "auto_routed", "needs_review"]`
 - Telemetry: `{duration_ms, token_cost, step_count, retry_attempts}`
 - Audit log: `[{node_id, routing_decision, timestamp, context_snapshot}]`

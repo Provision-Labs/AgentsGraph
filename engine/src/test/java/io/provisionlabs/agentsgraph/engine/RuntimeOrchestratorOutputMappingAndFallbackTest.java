@@ -98,9 +98,14 @@ class RuntimeOrchestratorOutputMappingAndFallbackTest {
         assertThat(result.getAccumulatedState().get("answer"))
                 .asString()
                 .startsWith("Sorry, something went wrong: Edge 'edge_ocr' failed at step 's0'");
-        // The flow completed (via the fallback edge), it did not propagate the exception.
+        // The flow finished via the fallback edge without propagating the exception, but it did
+        // NOT complete its intended path - status is ERROR, with the failure's stack trace
+        // (naming the failed edge/step and the root cause) recorded in the trace's error field.
         assertThat(traceStore.find(initialContext.getFlowId()).orElseThrow().getStatus())
-                .isEqualTo(ExecutionStatus.COMPLETED);
+                .isEqualTo(ExecutionStatus.ERROR);
+        assertThat(traceStore.find(initialContext.getFlowId()).orElseThrow().getError())
+                .contains("Edge 'edge_ocr' failed at step 's0'")
+                .contains("OCR service unavailable");
     }
 
     @Test
@@ -131,5 +136,8 @@ class RuntimeOrchestratorOutputMappingAndFallbackTest {
                 .isInstanceOf(AgentsGraphException.class);
         assertThat(traceStore.find(initialContext.getFlowId()).orElseThrow().getStatus())
                 .isEqualTo(ExecutionStatus.FAILED);
+        assertThat(traceStore.find(initialContext.getFlowId()).orElseThrow().getError())
+                .contains("Edge 'edge_ocr' failed at step 's0'")
+                .contains("OCR service unavailable");
     }
 }

@@ -51,6 +51,10 @@ class AgentsGraphTestHarnessTest {
         assertThat(result.getAccumulatedState())
                 .containsEntry("answer", "sorry")
                 .containsKey("pipeline_error");
+        // A fallback-handled failure finishes with ERROR (never COMPLETED), and the trace's
+        // error field carries the failure's stack trace naming the failed edge/step.
+        assertThat(harness.trace(result).getStatus()).isEqualTo(ExecutionStatus.ERROR);
+        assertThat(harness.trace(result).getError()).contains("service down").contains("e_ext");
         assertThat(harness.trace(result).getTags()).contains("needs_review");
     }
 

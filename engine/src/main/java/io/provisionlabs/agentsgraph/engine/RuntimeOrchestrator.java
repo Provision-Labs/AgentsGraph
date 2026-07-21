@@ -9,7 +9,11 @@ import io.provisionlabs.agentsgraph.trace.ExecutionEvent;
 import io.provisionlabs.agentsgraph.trace.ExecutionStatus;
 import io.provisionlabs.agentsgraph.trace.RoutingOutcome;
 import io.provisionlabs.agentsgraph.trace.TraceStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -43,8 +47,18 @@ import java.util.concurrent.ForkJoinPool;
  *       shape its own user-facing error response instead of every caller having to catch
  *       exceptions from {@link #run}/{@link #runAsync}.</li>
  * </ul>
+ *
+ * <p><b>Failure observability.</b> Every failure is reported three ways at once: logged through
+ * SLF4J (so it lands in the application's console/file logs with the full stack trace, naming the
+ * graph, flow, node and failed edge/step), persisted into the {@link TraceStore} record's
+ * {@code error} field (full stack trace), and reflected in the flow's final status -
+ * {@link ExecutionStatus#ERROR} when a {@code fallback_edge_id} handled the failure (the flow
+ * finished, but did NOT complete its intended path - never {@code COMPLETED}), or
+ * {@link ExecutionStatus#FAILED} when the failure aborted the flow and propagated to the caller.
  */
 public final class RuntimeOrchestrator {
+
+    private static final Logger log = LoggerFactory.getLogger(RuntimeOrchestrator.class);
 
     private final ConfigStore configStore;
     private final TraceStore traceStore;
@@ -79,6 +93,7 @@ public final class RuntimeOrchestrator {
 
         ExecutionContext context = initialContext;
         String currentNodeId = graph.getEntryNodeId();
+        boolean fellBack = false;
 
         try {
             while (currentNodeId != null) {
@@ -102,6 +117,11 @@ public final class RuntimeOrchestrator {
                     if (fallbackEdgeId == null || fallbackEdgeId.equals(edgeDefinition.getId())) {
                         throw stepFailure;
                     }
+                    log.error("Flow '{}' (graph '{}'): edge '{}' failed after node '{}' - running fallback edge '{}'",
+                            initialContext.getFlowId(), graphId, edgeDefinition.getId(),
+                            nodeDefinition.getId(), fallbackEdgeId, stepFailure);
+                    traceStore.recordError(initialContext.getFlowId(), stackTraceOf(stepFailure));
+                    fellBack = true;
                     edgeDefinition = graph.getEdge(fallbackEdgeId);
                     edge = new Edge(edgeDefinition, processorRegistry);
                     context = context.withMergedState(Map.of("pipeline_error", String.valueOf(stepFailure.getMessage())));
@@ -122,12 +142,25 @@ public final class RuntimeOrchestrator {
 
                 currentNodeId = edgeDefinition.getNextNodeId();
             }
-            traceStore.updateStatus(initialContext.getFlowId(), ExecutionStatus.COMPLETED);
+            // A flow that only finished thanks to a fallback edge did NOT complete its intended
+            // path - report ERROR (with the failure recorded above), never COMPLETED.
+            traceStore.updateStatus(initialContext.getFlowId(),
+                    fellBack ? ExecutionStatus.ERROR : ExecutionStatus.COMPLETED);
             return context;
         } catch (RuntimeException e) {
+            log.error("Flow '{}' (graph '{}') failed at node '{}': {}",
+                    initialContext.getFlowId(), graphId, currentNodeId, e.getMessage(), e);
+            traceStore.recordError(initialContext.getFlowId(), stackTraceOf(e));
             traceStore.updateStatus(initialContext.getFlowId(), ExecutionStatus.FAILED);
             throw e;
         }
+    }
+
+    /** Full stack trace of {@code failure} as text, for the trace record's {@code error} field. */
+    private static String stackTraceOf(Throwable failure) {
+        StringWriter buffer = new StringWriter();
+        failure.printStackTrace(new PrintWriter(buffer));
+        return buffer.toString();
     }
 
     /** Asynchronous counterpart of {@link #run}, executed on this orchestrator's configured executor. */

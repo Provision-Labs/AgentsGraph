@@ -22,6 +22,13 @@ public interface TraceStore {
 
     void updateStatus(String flowId, ExecutionStatus status);
 
+    /**
+     * Records the failure that put the flow into {@link ExecutionStatus#ERROR}/{@link
+     * ExecutionStatus#FAILED} - typically the exception's stack trace (see
+     * {@link TraceRecord#getError()}).
+     */
+    void recordError(String flowId, String error);
+
     Optional<TraceRecord> find(String flowId);
 
     /** Executions matching all of the given filters; a {@code null} filter is treated as "any". */
