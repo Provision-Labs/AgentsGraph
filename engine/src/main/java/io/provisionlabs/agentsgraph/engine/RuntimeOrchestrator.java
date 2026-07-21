@@ -9,7 +9,6 @@ import io.provisionlabs.agentsgraph.trace.ContextJsonCodec;
 import io.provisionlabs.agentsgraph.trace.ExecutionEvent;
 import io.provisionlabs.agentsgraph.trace.ExecutionStatus;
 import io.provisionlabs.agentsgraph.trace.RoutingOutcome;
-import io.provisionlabs.agentsgraph.trace.StepTraceStore;
 import io.provisionlabs.agentsgraph.trace.TraceStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,7 +61,7 @@ public final class RuntimeOrchestrator {
 
     /**
      * Metadata key switching a flow into debug mode ({@code true}/"true"): every step's input
-     * context and raw output are recorded into the {@link StepTraceStore} (if one is wired in),
+     * context and raw output are recorded into the {@link TraceStore}'s step-level trace,
      * enabling post-mortem inspection and {@link #resume}.
      */
     public static final String DEBUG_METADATA_KEY = "agentsgraph_debug";
@@ -75,7 +74,6 @@ public final class RuntimeOrchestrator {
     private final RoutingDelegateRegistry delegateRegistry;
     private final OutputSink outputSink;
     private final Executor asyncExecutor;
-    private final StepTraceStore stepTraceStore;
     private final ConditionEngine conditionEngine = new ConditionEngine();
     private final ContextJsonCodec contextCodec = new ContextJsonCodec();
 
@@ -88,20 +86,12 @@ public final class RuntimeOrchestrator {
     public RuntimeOrchestrator(ConfigStore configStore, TraceStore traceStore,
                                 ProcessorRegistry processorRegistry, RoutingDelegateRegistry delegateRegistry,
                                 OutputSink outputSink, Executor asyncExecutor) {
-        this(configStore, traceStore, processorRegistry, delegateRegistry, outputSink, asyncExecutor, null);
-    }
-
-    /** Full constructor; a non-null {@code stepTraceStore} enables debug-mode step tracing. */
-    public RuntimeOrchestrator(ConfigStore configStore, TraceStore traceStore,
-                                ProcessorRegistry processorRegistry, RoutingDelegateRegistry delegateRegistry,
-                                OutputSink outputSink, Executor asyncExecutor, StepTraceStore stepTraceStore) {
         this.configStore = Objects.requireNonNull(configStore, "configStore");
         this.traceStore = Objects.requireNonNull(traceStore, "traceStore");
         this.processorRegistry = Objects.requireNonNull(processorRegistry, "processorRegistry");
         this.delegateRegistry = Objects.requireNonNull(delegateRegistry, "delegateRegistry");
         this.outputSink = Objects.requireNonNull(outputSink, "outputSink");
         this.asyncExecutor = Objects.requireNonNull(asyncExecutor, "asyncExecutor");
-        this.stepTraceStore = stepTraceStore;
     }
 
     /** Runs {@code graphId} from its entry node to completion, returning the final context snapshot. */
@@ -244,15 +234,15 @@ public final class RuntimeOrchestrator {
     }
 
     /**
-     * A {@link RecordingStepTracer} when the flow runs in debug mode (a {@link StepTraceStore}
-     * is wired in AND the context's metadata carries {@link #DEBUG_METADATA_KEY}); {@link
-     * StepTracer#NOOP} otherwise - the normal path never pays for step tracing.
+     * A {@link RecordingStepTracer} (writing into the {@link TraceStore}'s step-level trace)
+     * when the context's metadata carries {@link #DEBUG_METADATA_KEY}; {@link StepTracer#NOOP}
+     * otherwise - the normal path never pays for step tracing.
      */
     private StepTracer stepTracerFor(GraphDefinition graph, ExecutionContext initialContext) {
-        if (stepTraceStore == null || !isDebug(initialContext)) {
+        if (!isDebug(initialContext)) {
             return StepTracer.NOOP;
         }
-        return new RecordingStepTracer(stepTraceStore, contextCodec,
+        return new RecordingStepTracer(traceStore, contextCodec,
                 initialContext.getFlowId(), graph.getId(), graph.getVersion());
     }
 

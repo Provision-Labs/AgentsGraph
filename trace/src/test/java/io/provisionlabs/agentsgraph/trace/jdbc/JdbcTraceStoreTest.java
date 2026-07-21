@@ -4,6 +4,7 @@ import io.provisionlabs.agentsgraph.context.ExecutionContext;
 import io.provisionlabs.agentsgraph.trace.ExecutionEvent;
 import io.provisionlabs.agentsgraph.trace.ExecutionStatus;
 import io.provisionlabs.agentsgraph.trace.RoutingOutcome;
+import io.provisionlabs.agentsgraph.trace.StepTraceRecord;
 import io.provisionlabs.agentsgraph.trace.TraceRecord;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.BeforeEach;
@@ -91,5 +92,69 @@ class JdbcTraceStoreTest {
     @Test
     void findReturnsEmptyForUnknownFlow() {
         assertThat(store.find("missing")).isEmpty();
+    }
+
+    private static StepTraceRecord stepRecord(String flowId, long seq, long startedAt) {
+        StepTraceRecord record = new StepTraceRecord();
+        record.setFlowId(flowId);
+        record.setSeq(seq);
+        record.setGraphId("g1");
+        record.setGraphVersion("v1");
+        record.setNodeId("n1");
+        record.setEdgeId("e1");
+        record.setStepId("s" + seq);
+        record.setStepIndex((int) seq);
+        record.setProcessorRef("proc-" + seq);
+        record.setInputContextJson("{\"input_data\":{}}");
+        record.setOutputJson("{\"out\":" + seq + "}");
+        record.setStartedAtMillis(startedAt);
+        record.setDurationMs(5);
+        return record;
+    }
+
+    @Test
+    void roundTripsAStepTraceRecordWithAllFields() {
+        StepTraceRecord original = stepRecord("sf1", 0, 1000);
+        original.setStatus(ExecutionStatus.FAILED);
+        original.setError("java.lang.IllegalStateException: boom");
+        original.setRestartable(false);
+        store.appendStep(original);
+
+        StepTraceRecord loaded = store.findStep("sf1", 0).orElseThrow();
+        assertThat(loaded.getGraphId()).isEqualTo("g1");
+        assertThat(loaded.getGraphVersion()).isEqualTo("v1");
+        assertThat(loaded.getNodeId()).isEqualTo("n1");
+        assertThat(loaded.getEdgeId()).isEqualTo("e1");
+        assertThat(loaded.getStepId()).isEqualTo("s0");
+        assertThat(loaded.getStepIndex()).isZero();
+        assertThat(loaded.getProcessorRef()).isEqualTo("proc-0");
+        assertThat(loaded.getInputContextJson()).isEqualTo("{\"input_data\":{}}");
+        assertThat(loaded.getOutputJson()).isEqualTo("{\"out\":0}");
+        assertThat(loaded.getStatus()).isEqualTo(ExecutionStatus.FAILED);
+        assertThat(loaded.getError()).contains("boom");
+        assertThat(loaded.isRestartable()).isFalse();
+        assertThat(loaded.getStartedAtMillis()).isEqualTo(1000);
+        assertThat(loaded.getDurationMs()).isEqualTo(5);
+    }
+
+    @Test
+    void findStepsReturnsRecordsInSeqOrder() {
+        store.appendStep(stepRecord("sf2", 2, 3000));
+        store.appendStep(stepRecord("sf2", 0, 1000));
+        store.appendStep(stepRecord("sf2", 1, 2000));
+        store.appendStep(stepRecord("other", 0, 1000));
+
+        assertThat(store.findSteps("sf2"))
+                .extracting(StepTraceRecord::getSeq)
+                .containsExactly(0L, 1L, 2L);
+    }
+
+    @Test
+    void deleteStepsOlderThanRemovesOnlyStaleStepRecords() {
+        store.appendStep(stepRecord("sf3", 0, 1000));
+        store.appendStep(stepRecord("sf3", 1, 5000));
+
+        assertThat(store.deleteStepsOlderThan(2000)).isEqualTo(1);
+        assertThat(store.findSteps("sf3")).extracting(StepTraceRecord::getSeq).containsExactly(1L);
     }
 }

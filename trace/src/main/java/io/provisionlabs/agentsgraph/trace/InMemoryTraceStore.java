@@ -12,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class InMemoryTraceStore implements TraceStore {
 
     private final Map<String, TraceRecord> records = new ConcurrentHashMap<>();
+    private final Map<String, List<StepTraceRecord>> stepsByFlow = new ConcurrentHashMap<>();
 
     @Override
     public TraceRecord startFlow(String flowId, String tenantId) {
@@ -59,6 +60,41 @@ public final class InMemoryTraceStore implements TraceStore {
             matches.add(record);
         }
         return matches;
+    }
+
+    @Override
+    public void appendStep(StepTraceRecord record) {
+        stepsByFlow.computeIfAbsent(record.getFlowId(),
+                id -> java.util.Collections.synchronizedList(new ArrayList<>())).add(record);
+    }
+
+    @Override
+    public List<StepTraceRecord> findSteps(String flowId) {
+        List<StepTraceRecord> steps = stepsByFlow.getOrDefault(flowId, List.of());
+        synchronized (steps) {
+            List<StepTraceRecord> sorted = new ArrayList<>(steps);
+            sorted.sort(java.util.Comparator.comparingLong(StepTraceRecord::getSeq));
+            return sorted;
+        }
+    }
+
+    @Override
+    public Optional<StepTraceRecord> findStep(String flowId, long seq) {
+        return findSteps(flowId).stream().filter(record -> record.getSeq() == seq).findFirst();
+    }
+
+    @Override
+    public long deleteStepsOlderThan(long startedBeforeEpochMillis) {
+        long removed = 0;
+        for (List<StepTraceRecord> steps : stepsByFlow.values()) {
+            synchronized (steps) {
+                int before = steps.size();
+                steps.removeIf(record -> record.getStartedAtMillis() < startedBeforeEpochMillis);
+                removed += before - steps.size();
+            }
+        }
+        stepsByFlow.values().removeIf(List::isEmpty);
+        return removed;
     }
 
     private TraceRecord requireRecord(String flowId) {

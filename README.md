@@ -313,7 +313,7 @@ later step still needs.
 ## 🐛 Debug Mode: Step-Level Tracing & Resume
 
 Normal tracing records per-node snapshots; **debug mode** goes one level deeper - every *step*
-inside every edge is recorded into the `StepTraceStore` (`agentsgraph_step_trace` when JDBC-backed)
+inside every edge is recorded into the `TraceStore`'s step-level trace (`agentsgraph_step_trace` when JDBC-backed)
 with the FULL context it saw on input, its raw output, timing, and - on failure - the stack trace:
 
 ```java
@@ -350,8 +350,35 @@ What to know before relying on it:
   round-trip exactly; rich POJOs come back as `Map`s on resume.
 - **Version pinning**: each record stores the graph version it ran against; resuming after the
   graph changed logs a warning and executes against the CURRENT graph.
-- **Retention**: `stepTraceStore.deleteOlderThan(epochMillis)` - debug traces are heavyweight by
+- **Retention**: `traceStore.deleteStepsOlderThan(epochMillis)` - debug traces are heavyweight by
   design; clean them up.
+
+### Dump, inspect, replay
+
+Three tools turn a recorded debug run into a shareable, reproducible artifact:
+
+```java
+String dump   = engine.dumpStepTraces(flowId);   // self-contained JSON - attach to the bug report
+String report = engine.describeFlow(flowId);     // plain-text status + step table - the payload
+                                                 // for your admin endpoint / actuator / CLI
+```
+
+`describeFlow` works for any flow (for a non-debug one it reports status/tags/error and says step
+traces are absent); the framework deliberately ships the *report*, not the HTTP endpoint - expose
+it through whatever ops surface the application already has.
+
+The dump closes the loop with the test kit: `harness.mocksFromDump(dump)` registers a
+`MockProcessor.returningSequence` for every processor that succeeded in the recording, answering
+with the recorded outputs in the recorded order - so a flow captured against production replays
+locally with the exact same external-service answers and zero network. A recorded *failure* is
+deliberately not replayed: fix the processor, replay the run, and every upstream answer stays as
+it was.
+
+```java
+// CI regression test from a production incident:
+harness.mocksFromDump(dumpJson, "docscan-ocr", "llm-completion"); // only the external steps
+ExecutionContext replayed = harness.execute("ocr-accounting", originalInput);
+```
 
 ## 🧪 Testing Without AI APIs
 

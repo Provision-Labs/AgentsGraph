@@ -7,9 +7,8 @@ import io.provisionlabs.agentsgraph.config.NodeDefinition;
 import io.provisionlabs.agentsgraph.config.RoutingStrategy;
 import io.provisionlabs.agentsgraph.config.StepDefinition;
 import io.provisionlabs.agentsgraph.context.ExecutionContext;
-import io.provisionlabs.agentsgraph.trace.InMemoryStepTraceStore;
+import io.provisionlabs.agentsgraph.trace.ExecutionStatus;
 import io.provisionlabs.agentsgraph.trace.InMemoryTraceStore;
-import io.provisionlabs.agentsgraph.trace.StepStatus;
 import io.provisionlabs.agentsgraph.trace.StepTraceRecord;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,17 +20,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Debug-mode step tracing in the orchestrator: with a {@link InMemoryStepTraceStore} wired in and
- * the {@link RuntimeOrchestrator#DEBUG_METADATA_KEY} metadata flag set, every step's input
- * context and raw output are recorded - and {@link RuntimeOrchestrator#resume} re-enters the
- * graph at a recorded step.
+ * Debug-mode step tracing in the orchestrator: with the {@link RuntimeOrchestrator#DEBUG_METADATA_KEY}
+ * metadata flag set, every step's input context and raw output are recorded into the
+ * {@link InMemoryTraceStore}'s step-level trace - and {@link RuntimeOrchestrator#resume}
+ * re-enters the graph at a recorded step.
  */
 class RuntimeOrchestratorStepTraceTest {
 
     private InMemoryConfigStore configStore;
     private ProcessorRegistry processorRegistry;
     private InMemoryTraceStore traceStore;
-    private InMemoryStepTraceStore stepTraceStore;
     private RuntimeOrchestrator orchestrator;
 
     @BeforeEach
@@ -39,10 +37,8 @@ class RuntimeOrchestratorStepTraceTest {
         configStore = new InMemoryConfigStore();
         processorRegistry = new ProcessorRegistry();
         traceStore = new InMemoryTraceStore();
-        stepTraceStore = new InMemoryStepTraceStore();
         orchestrator = new RuntimeOrchestrator(configStore, traceStore, processorRegistry,
-                new RoutingDelegateRegistry(), NoopOutputSink.INSTANCE,
-                java.util.concurrent.ForkJoinPool.commonPool(), stepTraceStore);
+                new RoutingDelegateRegistry());
 
         // Two-step edge: s0 uppercases the text, s1 wraps s0's output.
         processorRegistry.register("uppercase", (context, step) ->
@@ -71,7 +67,7 @@ class RuntimeOrchestratorStepTraceTest {
         ExecutionContext initial = debugContext(Map.of("text", "hello"));
         orchestrator.run("g1", initial);
 
-        List<StepTraceRecord> steps = stepTraceStore.findByFlow(initial.getFlowId());
+        List<StepTraceRecord> steps = traceStore.findSteps(initial.getFlowId());
         assertThat(steps).hasSize(2);
 
         StepTraceRecord first = steps.get(0);
@@ -83,7 +79,7 @@ class RuntimeOrchestratorStepTraceTest {
         assertThat(first.getProcessorRef()).isEqualTo("uppercase");
         assertThat(first.getGraphId()).isEqualTo("g1");
         assertThat(first.getGraphVersion()).isEqualTo("v1");
-        assertThat(first.getStatus()).isEqualTo(StepStatus.OK);
+        assertThat(first.getStatus()).isEqualTo(ExecutionStatus.COMPLETED);
         assertThat(first.isRestartable()).isTrue();
         assertThat(first.getInputContextJson()).contains("\"text\":\"hello\"");
         assertThat(first.getOutputJson()).contains("\"upper\":\"HELLO\"");
@@ -101,7 +97,7 @@ class RuntimeOrchestratorStepTraceTest {
         ExecutionContext initial = ExecutionContext.newFlow(Map.of("text", "hello"), Map.of());
         orchestrator.run("g1", initial);
 
-        assertThat(stepTraceStore.findByFlow(initial.getFlowId())).isEmpty();
+        assertThat(traceStore.findSteps(initial.getFlowId())).isEmpty();
     }
 
     @Test
@@ -114,10 +110,10 @@ class RuntimeOrchestratorStepTraceTest {
         assertThatThrownBy(() -> orchestrator.run("g1", initial))
                 .isInstanceOf(AgentsGraphException.class);
 
-        List<StepTraceRecord> steps = stepTraceStore.findByFlow(initial.getFlowId());
+        List<StepTraceRecord> steps = traceStore.findSteps(initial.getFlowId());
         assertThat(steps).hasSize(2);
         StepTraceRecord failed = steps.get(1);
-        assertThat(failed.getStatus()).isEqualTo(StepStatus.FAILED);
+        assertThat(failed.getStatus()).isEqualTo(ExecutionStatus.FAILED);
         assertThat(failed.getError()).contains("wrap exploded");
         // The failing step's exact input is captured - the failure is reproducible as-is.
         assertThat(failed.getInputContextJson()).contains("\"upper\":\"HELLO\"");
@@ -143,7 +139,7 @@ class RuntimeOrchestratorStepTraceTest {
         assertThat(uppercaseCalls[0]).isZero();
         assertThat(result.getAccumulatedState()).containsEntry("wrapped", "[HELLO]");
         // The resumed run is itself step-traced, starting at the resumed step.
-        List<StepTraceRecord> resumedSteps = stepTraceStore.findByFlow(restored.getFlowId());
+        List<StepTraceRecord> resumedSteps = traceStore.findSteps(restored.getFlowId());
         assertThat(resumedSteps).hasSize(1);
         assertThat(resumedSteps.get(0).getStepId()).isEqualTo("s1");
         assertThat(resumedSteps.get(0).getStepIndex()).isEqualTo(1);
