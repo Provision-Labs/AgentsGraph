@@ -382,6 +382,136 @@ harness.mocksFromDump(dumpJson, "docscan-ocr", "llm-completion"); // only the ex
 ExecutionContext replayed = harness.execute("ocr-accounting", originalInput);
 ```
 
+## 🖥️ Building & Running the Admin API Server
+
+The `web` + `spring-boot-starter` modules turn any Spring Boot 3 application (Java 17) into the
+backend of the [AgentsGraph UI](https://github.com/Provision-Labs/agentsgraph-ui) - the
+`/api/agentsgraph/**` REST API over graphs, processors, execution traces, step-level debug and
+resume. A minimal server is one build file and one class:
+
+```gradle
+// build.gradle of your server project
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.15'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+java { sourceCompatibility = JavaVersion.VERSION_17 }
+repositories {
+    mavenCentral()
+    maven { url = 'https://your-nexus/repository/maven-releases/' }  // where agentsgraph-* is published
+}
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'   // provides the DataSource (DB modes)
+    implementation 'io.provisionlabs:agentsgraph-spring-boot-starter:0.4.0'
+    runtimeOnly 'org.postgresql:postgresql'   // or com.h2database:h2 for the in-memory database
+}
+```
+
+```java
+@SpringBootApplication
+public class AgentsGraphServer {
+    public static void main(String[] args) {
+        SpringApplication.run(AgentsGraphServer.class, args);
+    }
+}
+```
+
+Build and run:
+
+```bash
+./gradlew build
+./gradlew bootRun
+curl http://localhost:8080/api/agentsgraph/graphs   # -> [] on an empty database
+```
+
+### Database-backed (production shape)
+
+Point the application at the database - nothing else. The starter auto-configures
+`JdbcConfigStore`/`JdbcProcessorDefinitionStore`/`JdbcTraceStore` over the `DataSource` (each
+provisions its own `agentsgraph_*` schema on startup), the engine, and the REST API:
+
+```properties
+# application.properties
+spring.datasource.url=jdbc:postgresql://localhost:5432/docscan
+spring.datasource.username=docscan
+spring.datasource.password=...
+
+# Only when the UI dev server runs on another origin (npm start on :4200):
+agentsgraph.web.cors-origins=http://localhost:4200
+```
+
+Deploy graphs and processors the DB-first way - the same SQL scripts production uses (`INSERT
+INTO agentsgraph_graph_config / agentsgraph_processor ...`, see `examples/sql/docscan-schema.sql`
+and WebVane's `db/postgres/docscan_graph/data.sql`); the engine picks up config changes without
+a restart (graphs on the next execution, processor rows after `engine.reload()`).
+
+**In-memory *database* variant** - zero install, still exercises the real JDBC stores (data lives
+until the JVM exits):
+
+```properties
+spring.datasource.url=jdbc:h2:mem:agentsgraph;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+spring.datasource.username=sa
+```
+
+`MODE=PostgreSQL` lets the production PostgreSQL deployment scripts run verbatim against H2 -
+exactly what the `agentsgraph-test` harness does.
+
+### Pure in-memory stores (no database at all)
+
+Every starter bean is `@ConditionalOnMissingBean`, so defining your own engine switches the whole
+stack to in-memory stores while the starter still contributes the admin service/controller around
+it - handy for demos and UI development:
+
+```java
+@SpringBootApplication
+public class AgentsGraphServer {
+
+    public static void main(String[] args) {
+        SpringApplication.run(AgentsGraphServer.class, args);
+    }
+
+    @Bean
+    public AgentsGraphEngine agentsGraphEngine() {
+        AgentsGraphEngine engine = AgentsGraphEngine.inMemory();
+        engine.registerProcessor("echo", (context, step) ->
+                Map.of("answer", "echo: " + context.getInputData().get("text")));
+        engine.deployGraph(GraphJsonMapper.fromJson("{"
+                + "\"id\": \"demo\", \"version\": \"v1\", \"entry_node_id\": \"n0\","
+                + "\"nodes\": [{\"id\": \"n0\", \"routing_strategy\": \"rules\", \"routing_table\": {\"default\": \"e0\"}}],"
+                + "\"edges\": [{\"id\": \"e0\", \"steps\": [{\"id\": \"s0\", \"processor_id\": \"echo\"}]}]"
+                + "}"));
+        return engine;
+    }
+}
+```
+
+(No `spring-boot-starter-jdbc`/driver dependency needed in this mode.) Executions and debug step
+traces are recorded in process memory and vanish on restart. Trigger a debug run to have
+something to look at in the UI:
+
+```java
+engine.executeDebug("demo", ExecutionContext.newFlow(Map.of("text", "hello"), Map.of()));
+```
+
+### Hooking up the UI
+
+```bash
+git clone https://github.com/Provision-Labs/agentsgraph-ui && cd agentsgraph-ui
+npm install
+npm start        # ng serve, proxies /api -> http://localhost:8080
+```
+
+Open http://localhost:4200 - graphs, processors, executions and (for debug-mode flows) the
+step-level in/out viewer with resume-from-step.
+
+### An existing application as the backend
+
+An app that already wires its own stores/engine (e.g. WebVane's docscan module via Spring XML)
+just adds the starter dependency: `@ConditionalOnMissingBean` keeps every existing bean, and only
+the missing admin service/controller are contributed on top of them.
+
 ## 🧪 Testing Without AI APIs
 
 A graph whose steps call LLM/OCR/classification services is still, above the wire, deterministic
