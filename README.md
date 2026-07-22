@@ -59,8 +59,7 @@ architecture above. Each layer lives in its own module so it can be depended on 
 | `control` | Control Plane & Analytics | Query/replay API (`ControlPlane`) built on top of the trace store, backing `GET /executions` and replay/debug use cases, plus `GraphClassifier`/`TemplateGraphClassifier` for picking which graph should handle a given input. | `trace`, `context`, `config` |
 | `core` | Facade | `AgentsGraphEngine` — a single entry point that deploys graphs, loads/reloads processors from the DB, runs flows (sync/async) and classifies inputs across all five layers. Constructed from `ConfigStore`/`ProcessorDefinitionStore`/`TraceStore` *implementations* — it never touches a `DataSource` or any other storage detail itself; each JDBC store ensures its own schema on construction. | all of the above |
 | `test` | Test kit | `AgentsGraphTestHarness`, `MockProcessor` and `SqlScriptRunner` — run a real graph (deployed by the same SQL script production uses) with selected processors replaced by scripted mocks, so tests exercise routing/threading/fallback/tracing with zero network calls and zero AI-API token spend. | `core` |
-| `web` | Admin API | `AgentsGraphAdminService` + `AgentsGraphAdminController` — the REST backend of the [AgentsGraph UI](https://github.com/Provision-Labs/agentsgraph-ui): graph list/JSON, graph-scoped processors, execution traces, debug step traces (parsed in/out) and resume-from-step, all read through the engine's own stores. Java 17 / Spring Framework 6. | `core` |
-| `spring-boot-starter` | Starter | Auto-configuration: point a Spring Boot 3 app at a `DataSource` and get the three JDBC stores, the engine and the `/api/agentsgraph/**` admin API with zero wiring; every bean is `@ConditionalOnMissingBean`, so apps that wire their own stores/engine keep them. | `web` |
+| `admin-server` | Admin API server | One module, three hats: the REST backend of the [AgentsGraph UI](https://github.com/Provision-Labs/agentsgraph-ui) (`AgentsGraphAdminService`/`AgentsGraphAdminController` - graphs, processors, execution traces, debug step traces with parsed in/out, resume-from-step), Spring Boot auto-configuration (add the jar to any Boot 3 app with a `DataSource` - every bean is `@ConditionalOnMissingBean`), and a runnable server (`./gradlew :admin-server:bootRun`). Java 17 / Spring Boot 3. | `core` |
 
 Build with the bundled wrapper — no local Gradle install required:
 
@@ -384,10 +383,24 @@ ExecutionContext replayed = harness.execute("ocr-accounting", originalInput);
 
 ## 🖥️ Building & Running the Admin API Server
 
-The `web` + `spring-boot-starter` modules turn any Spring Boot 3 application (Java 17) into the
+The `admin-server` module turns any Spring Boot 3 application (Java 17) into the
 backend of the [AgentsGraph UI](https://github.com/Provision-Labs/agentsgraph-ui) - the
 `/api/agentsgraph/**` REST API over graphs, processors, execution traces, step-level debug and
-resume. A minimal server is one build file and one class:
+resume. This repository ships one ready to run - the [`server`](server) module:
+
+```bash
+./gradlew :admin-server:bootRun
+curl http://localhost:8080/api/agentsgraph/graphs
+```
+
+By default it runs in pure in-memory mode, pre-seeded with a demo graph plus one successful and
+one failed debug run - so the AgentsGraph UI has graphs, executions and a resumable failed step
+to show immediately. Switching it to a real database is a two-line change (uncomment
+`spring-boot-starter-jdbc` + the driver in [`admin-server/build.gradle`](admin-server/build.gradle), set
+`spring.datasource.*` in [`application.properties`](admin-server/src/main/resources/application.properties) -
+the demo in-memory beans back off automatically when a `DataSource` appears).
+
+For your own application, a minimal server is one build file and one class:
 
 ```gradle
 // build.gradle of your server project
@@ -404,7 +417,7 @@ repositories {
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'   // provides the DataSource (DB modes)
-    implementation 'io.provisionlabs:agentsgraph-spring-boot-starter:0.4.0'
+    implementation 'io.provisionlabs:agentsgraph-admin-server:0.4.0'
     runtimeOnly 'org.postgresql:postgresql'   // or com.h2database:h2 for the in-memory database
 }
 ```

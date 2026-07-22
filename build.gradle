@@ -1,3 +1,10 @@
+// The Spring Boot plugin is declared here (apply false) so the runnable :server module can
+// apply it; the library modules are untouched by it.
+plugins {
+    id 'org.springframework.boot' version '3.5.15' apply false
+    id 'io.spring.dependency-management' version '1.1.7' apply false
+}
+
 // Root aggregator project: no sources of its own. Common conventions for every layer module
 // (Config Store, Execution Context, Runtime Orchestrator, Trace Store, Control Plane) and the
 // agentsgraph-core facade live here so each module's build.gradle only declares its own
@@ -76,6 +83,9 @@ subprojects {
 
     tasks.withType(JavaCompile).configureEach {
         options.encoding = 'UTF-8'
+        // Spring 6.1+ resolves @PathVariable/@RequestParam names via reflection only when
+        // classes are compiled with -parameters (the web module also names them explicitly).
+        options.compilerArgs << '-parameters'
     }
 
     publishing {

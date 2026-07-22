@@ -1,0 +1,48 @@
+description = 'AgentsGraph :: Admin server - REST API + Spring Boot auto-configuration + runnable main (./gradlew :admin-server:bootRun), the backend of the AgentsGraph UI'
+
+apply plugin: 'org.springframework.boot'
+apply plugin: 'io.spring.dependency-management'
+
+// Spring Boot 3 / Spring Framework 6 require Java 17 - only this module does; the framework's
+// own layers stay on the parent's Java 11 baseline.
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+dependencies {
+    api project(':core')
+
+    implementation "com.fasterxml.jackson.core:jackson-databind:${rootProject.ext.jacksonVersion}"
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+
+    // DATABASE-BACKED MODE for bootRun (see application.properties): uncomment and set
+    // spring.datasource.* - the auto-configuration wires the JDBC stores over it. Keep these
+    // commented for the default pure in-memory mode: with H2 on the classpath Boot would
+    // auto-create an embedded DataSource even without properties.
+    // implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    // runtimeOnly 'org.postgresql:postgresql'                          // your database...
+    // runtimeOnly "com.h2database:h2:${rootProject.ext.h2Version}"     // ...or in-memory H2
+
+    testImplementation "org.springframework:spring-test:${rootProject.ext.springVersion}"
+    testImplementation 'org.springframework.boot:spring-boot-test'
+    testImplementation 'jakarta.servlet:jakarta.servlet-api'
+    testImplementation 'com.jayway.jsonpath:json-path'
+    testImplementation "com.h2database:h2:${rootProject.ext.h2Version}"
+}
+
+// This module is BOTH a library (the auto-configured admin API, published as a plain jar for
+// applications like WebVane to depend on) and a runnable server (bootRun / bootJar for
+// standalone deployment) - so keep the plain jar as the publication artifact and give the
+// executable fat jar a classifier.
+jar {
+    enabled = true
+    archiveClassifier = ''
+    // The demo application.properties belongs to the RUNNABLE server only (bootRun/bootJar) -
+    // shipped inside the library jar it would shadow the consuming application's own properties.
+    exclude 'application.properties'
+}
+
+bootJar {
+    archiveClassifier = 'boot'
+}
