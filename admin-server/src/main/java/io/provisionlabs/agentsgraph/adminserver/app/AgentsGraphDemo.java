@@ -1,4 +1,4 @@
-package io.provisionlabs.agentsgraph.adminserver.config;
+package io.provisionlabs.agentsgraph.adminserver.app;
 
 import io.provisionlabs.agentsgraph.AgentsGraphEngine;
 import io.provisionlabs.agentsgraph.config.EdgeDefinition;

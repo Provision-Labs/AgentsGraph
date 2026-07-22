@@ -24,8 +24,10 @@ dependencies {
     runtimeOnly 'org.postgresql:postgresql'
     // runtimeOnly "com.h2database:h2:${rootProject.ext.h2Version}"     // for an in-memory H2 database instead
 
+    testImplementation project(':test')   // SqlScriptRunner for seeding the H2 database
     testImplementation "org.springframework:spring-test:${rootProject.ext.springVersion}"
     testImplementation 'org.springframework.boot:spring-boot-test'
+    testImplementation 'org.springframework.boot:spring-boot-test-autoconfigure'
     testImplementation 'jakarta.servlet:jakarta.servlet-api'
     testImplementation 'com.jayway.jsonpath:json-path'
     testImplementation "com.h2database:h2:${rootProject.ext.h2Version}"

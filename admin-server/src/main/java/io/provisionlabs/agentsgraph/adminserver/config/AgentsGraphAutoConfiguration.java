@@ -12,6 +12,7 @@ import io.provisionlabs.agentsgraph.trace.jdbc.JdbcTraceStore;
 
 
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
@@ -30,7 +31,7 @@ import javax.sql.DataSource;
  * its own stores/engine (e.g. with programmatic processors, as WebVane's docscan module does)
  * keeps them: only the missing pieces are filled in.
  */
-@AutoConfiguration
+@AutoConfiguration(after = DataSourceAutoConfiguration.class)
 @EnableConfigurationProperties(AgentsGraphWebProperties.class)
 public class AgentsGraphAutoConfiguration {
 

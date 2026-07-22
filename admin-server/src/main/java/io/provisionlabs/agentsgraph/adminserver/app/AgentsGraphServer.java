@@ -1,7 +1,6 @@
-package io.provisionlabs.agentsgraph.adminserver;
+package io.provisionlabs.agentsgraph.adminserver.app;
 
 import io.provisionlabs.agentsgraph.adminserver.config.AgentsGraphAutoConfiguration;
-import io.provisionlabs.agentsgraph.adminserver.config.AgentsGraphDemo;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
@@ -24,8 +23,15 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * <pre>{@code ./gradlew :admin-server:bootRun --args='--spring.profiles.active=db' }</pre>
  *
  * The {@code db} profile disables the demo entirely and re-enables Boot's DataSource
- * auto-configuration with your {@code spring.datasource.*} (see
- * {@code application-db.properties}); the three JDBC stores provision their own schemas.
+ * auto-configuration with your {@code spring.datasource.*} (see the {@code db} document in
+ * {@code application.yml}); the three JDBC stores provision their own schemas.
+ *
+ * <p><b>Why the app lives in the {@code .app} subpackage:</b> component scanning starts here, and
+ * it must NOT reach the library classes ({@code adminserver}/{@code .config}/{@code .service}) -
+ * a scanned {@code @RestController}/{@code @AutoConfiguration} is processed in the user-config
+ * phase, where {@code @ConditionalOnBean(DataSource.class)} always fails (the DataSource bean is
+ * contributed later by Boot's auto-configuration). The admin API therefore loads ONLY through
+ * {@code META-INF/spring/...AutoConfiguration.imports}, in the correct phase.
  */
 @SpringBootApplication
 public class AgentsGraphServer {
