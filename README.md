@@ -396,10 +396,14 @@ curl http://localhost:8080/api/agentsgraph/graphs
 
 By default it runs in pure in-memory mode, pre-seeded with a demo graph plus one successful and
 one failed debug run - so the AgentsGraph UI has graphs, executions and a resumable failed step
-to show immediately. Switching it to a real database is a two-line change (uncomment
-`spring-boot-starter-jdbc` + the driver in [`admin-server/build.gradle`](admin-server/build.gradle), set
-`spring.datasource.*` in [`application.properties`](admin-server/src/main/resources/application.properties) -
-the demo in-memory beans back off automatically when a `DataSource` appears).
+to show immediately. The PostgreSQL driver ships with it - switch to a real database by
+activating the `db` profile with your `spring.datasource.*`
+(see [`application-db.properties`](admin-server/src/main/resources/application-db.properties);
+the demo in-memory beans back off automatically when a `DataSource` appears):
+
+```bash
+./gradlew :admin-server:bootRun --args='--spring.profiles.active=db'
+```
 
 For your own application, a minimal server is one build file and one class:
 

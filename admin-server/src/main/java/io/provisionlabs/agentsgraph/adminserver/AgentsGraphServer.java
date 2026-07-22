@@ -30,11 +30,11 @@ import java.util.Map;
  * flows are executed (one succeeds, one fails at the LLM step), so the UI has graphs, executions
  * AND step traces to show immediately - including a failed step that can be resumed from the UI.
  *
- * <p><b>Database-backed mode.</b> Uncomment {@code spring-boot-starter-jdbc} + the driver in this
- * module's {@code build.gradle} and set {@code spring.datasource.*} in
- * {@code application.properties}: the demo beans below back off automatically (they are
- * conditional on there being no {@code DataSource}), and the auto-configuration wires the three JDBC stores
- * (schemas self-provisioned) over the real database instead.
+ * <p><b>Database-backed mode.</b> The PostgreSQL driver ships with the server - activate the
+ * {@code db} profile ({@code --spring.profiles.active=db}, see {@code application-db.properties})
+ * with your {@code spring.datasource.*}: the demo beans below back off automatically (they are
+ * conditional on there being no {@code DataSource}), and the auto-configuration wires the three
+ * JDBC stores (schemas self-provisioned) over the real database instead.
  */
 @SpringBootApplication
 public class AgentsGraphServer {

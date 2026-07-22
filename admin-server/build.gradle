@@ -16,13 +16,13 @@ dependencies {
     implementation "com.fasterxml.jackson.core:jackson-databind:${rootProject.ext.jacksonVersion}"
     implementation 'org.springframework.boot:spring-boot-starter-web'
 
-    // DATABASE-BACKED MODE for bootRun (see application.properties): uncomment and set
-    // spring.datasource.* - the auto-configuration wires the JDBC stores over it. Keep these
-    // commented for the default pure in-memory mode: with H2 on the classpath Boot would
-    // auto-create an embedded DataSource even without properties.
-    // implementation 'org.springframework.boot:spring-boot-starter-jdbc'
-    // runtimeOnly 'org.postgresql:postgresql'                          // your database...
-    // runtimeOnly "com.h2database:h2:${rootProject.ext.h2Version}"     // ...or in-memory H2
+    // Database mode ships ready to go: the PostgreSQL driver is always on the classpath, and
+    // Boot's DataSource auto-configuration is EXCLUDED in the default application.properties so
+    // the in-memory demo mode still starts without a database - activate the 'db' profile
+    // (application-db.properties) to connect for real.
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    runtimeOnly 'org.postgresql:postgresql'
+    // runtimeOnly "com.h2database:h2:${rootProject.ext.h2Version}"     // for an in-memory H2 database instead
 
     testImplementation "org.springframework:spring-test:${rootProject.ext.springVersion}"
     testImplementation 'org.springframework.boot:spring-boot-test'
@@ -38,9 +38,9 @@ dependencies {
 jar {
     enabled = true
     archiveClassifier = ''
-    // The demo application.properties belongs to the RUNNABLE server only (bootRun/bootJar) -
-    // shipped inside the library jar it would shadow the consuming application's own properties.
-    exclude 'application.properties'
+    // The demo application*.properties belong to the RUNNABLE server only (bootRun/bootJar) -
+    // shipped inside the library jar they would shadow the consuming application's own properties.
+    exclude 'application*.properties'
 }
 
 bootJar {
