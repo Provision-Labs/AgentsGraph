@@ -1,41 +1,31 @@
 package io.provisionlabs.agentsgraph.adminserver;
 
-import io.provisionlabs.agentsgraph.AgentsGraphEngine;
 import io.provisionlabs.agentsgraph.adminserver.config.AgentsGraphAutoConfiguration;
-import io.provisionlabs.agentsgraph.config.EdgeDefinition;
-import io.provisionlabs.agentsgraph.config.GraphDefinition;
-import io.provisionlabs.agentsgraph.config.NodeDefinition;
-import io.provisionlabs.agentsgraph.config.RoutingStrategy;
-import io.provisionlabs.agentsgraph.config.StepDefinition;
-import io.provisionlabs.agentsgraph.context.ExecutionContext;
-import org.springframework.boot.CommandLineRunner;
+import io.provisionlabs.agentsgraph.adminserver.config.AgentsGraphDemo;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.context.annotation.Bean;
-
-import javax.sql.DataSource;
-import java.util.Map;
 
 /**
  * The runnable AgentsGraph admin-API server - the backend of the
  * <a href="https://github.com/Provision-Labs/agentsgraph-ui">AgentsGraph UI</a>, started straight
  * from this build:
  *
- * <pre>{@code ./gradlew :server:bootRun }</pre>
+ * <pre>{@code ./gradlew :admin-server:bootRun }</pre>
  *
- * <p><b>Default: pure in-memory mode.</b> The engine bean below overrides the auto-configuration's
- * DataSource-based store beans (every auto-configured bean is {@code @ConditionalOnMissingBean}),
- * and {@link AgentsGraphAutoConfiguration} contributes the {@code /api/agentsgraph/**} REST API
- * around it. On startup two DEBUG
- * flows are executed (one succeeds, one fails at the LLM step), so the UI has graphs, executions
- * AND step traces to show immediately - including a failed step that can be resumed from the UI.
+ * <p><b>Default: pure in-memory demo mode</b> - the {@code inmemory} profile is the default (see
+ * {@code application.properties}), activating {@link AgentsGraphDemo}: an in-memory engine with a
+ * demo graph and two seeded DEBUG flows (one successful, one intentionally failing at the LLM
+ * step), so the UI has graphs, executions and a resumable failed step to show immediately.
+ * {@link AgentsGraphAutoConfiguration} contributes the {@code /api/agentsgraph/**} REST API
+ * around whichever engine is present.
  *
- * <p><b>Database-backed mode.</b> The PostgreSQL driver ships with the server - activate the
- * {@code db} profile ({@code --spring.profiles.active=db}, see {@code application-db.properties})
- * with your {@code spring.datasource.*}: the demo beans below back off automatically (they are
- * conditional on there being no {@code DataSource}), and the auto-configuration wires the three
- * JDBC stores (schemas self-provisioned) over the real database instead.
+ * <p><b>Database-backed mode</b> - the PostgreSQL driver ships with the server:
+ *
+ * <pre>{@code ./gradlew :admin-server:bootRun --args='--spring.profiles.active=db' }</pre>
+ *
+ * The {@code db} profile disables the demo entirely and re-enables Boot's DataSource
+ * auto-configuration with your {@code spring.datasource.*} (see
+ * {@code application-db.properties}); the three JDBC stores provision their own schemas.
  */
 @SpringBootApplication
 public class AgentsGraphServer {
