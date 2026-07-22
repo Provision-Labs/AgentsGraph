@@ -387,7 +387,9 @@ ExecutionContext replayed = harness.execute("ocr-accounting", originalInput);
 The `web` + `spring-boot-starter` modules turn any Spring Boot 3 application (Java 17) into the
 backend of the [AgentsGraph UI](https://github.com/Provision-Labs/agentsgraph-ui) - the
 `/api/agentsgraph/**` REST API over graphs, processors, execution traces, step-level debug and
-resume. A minimal server is one build file and one class:
+resume. A minimal server is one build file and one class - a runnable copy of everything below
+lives in [`examples/demo-server`](examples/demo-server) (pure in-memory mode, pre-seeded with a
+demo graph plus one successful and one failed debug run, so the UI has data immediately):
 
 ```gradle
 // build.gradle of your server project

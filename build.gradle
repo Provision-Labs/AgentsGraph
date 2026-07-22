@@ -76,6 +76,9 @@ subprojects {
 
     tasks.withType(JavaCompile).configureEach {
         options.encoding = 'UTF-8'
+        // Spring 6.1+ resolves @PathVariable/@RequestParam names via reflection only when
+        // classes are compiled with -parameters (the web module also names them explicitly).
+        options.compilerArgs << '-parameters'
     }
 
     publishing {

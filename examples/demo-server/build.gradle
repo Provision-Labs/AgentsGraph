@@ -1,0 +1,37 @@
+// Standalone runnable sample of the "Building & Running the Admin API Server" README section -
+// the smallest Spring Boot application that becomes the backend of the AgentsGraph UI. It is a
+// SEPARATE Gradle project on purpose (not a module of agentsgraph-parent): it consumes the
+// published agentsgraph-spring-boot-starter artifact exactly the way your application would.
+//
+//   cd examples/demo-server
+//   ../../gradlew bootRun            (or: gradle bootRun)
+//   curl http://localhost:8080/api/agentsgraph/graphs
+
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.15'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'io.provisionlabs'
+version = '0.4.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+}
+
+repositories {
+    mavenCentral()
+    mavenLocal()   // pick up locally-published agentsgraph-* (./gradlew publishToMavenLocal)
+    // ...or your Nexus:
+    // maven { url = 'https://your-nexus/repository/maven-releases/' }
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation "io.provisionlabs:agentsgraph-spring-boot-starter:${version}"
+
+    // For the DATABASE-backed mode (see application.properties), additionally:
+    // implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    // runtimeOnly 'org.postgresql:postgresql'        // or: runtimeOnly 'com.h2database:h2'
+}

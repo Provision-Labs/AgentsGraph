@@ -13,4 +13,11 @@ dependencies {
     implementation "com.fasterxml.jackson.core:jackson-databind:${rootProject.ext.jacksonVersion}"
     implementation "org.springframework:spring-web:${rootProject.ext.springVersion}"
     implementation "org.springframework:spring-context:${rootProject.ext.springVersion}"
+
+    // MockMvc (standalone) tests: real controller + real service over a live in-memory engine,
+    // no server socket - so the HTTP layer is verified even where NIO servers can't run.
+    testImplementation "org.springframework:spring-test:${rootProject.ext.springVersion}"
+    testImplementation "org.springframework:spring-webmvc:${rootProject.ext.springVersion}"
+    testImplementation "jakarta.servlet:jakarta.servlet-api:6.0.0"
+    testImplementation "com.jayway.jsonpath:json-path:2.9.0"
 }

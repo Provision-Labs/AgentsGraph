@@ -11,4 +11,10 @@ dependencies {
     implementation "org.springframework.boot:spring-boot:${rootProject.ext.springBootVersion}"
     implementation "org.springframework.boot:spring-boot-autoconfigure:${rootProject.ext.springBootVersion}"
     implementation "org.springframework:spring-webmvc:${rootProject.ext.springVersion}"
+
+    // ApplicationContextRunner tests of the wiring contract - no web server booted.
+    testImplementation "org.springframework.boot:spring-boot-test:${rootProject.ext.springBootVersion}"
+    testImplementation "org.springframework:spring-test:${rootProject.ext.springVersion}"
+    testImplementation "jakarta.servlet:jakarta.servlet-api:6.0.0"
+    testImplementation "com.h2database:h2:${rootProject.ext.h2Version}"
 }

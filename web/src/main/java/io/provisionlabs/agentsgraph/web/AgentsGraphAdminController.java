@@ -53,12 +53,12 @@ public class AgentsGraphAdminController {
     }
 
     @GetMapping(value = "/graphs/{graphId}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public String getGraphJson(@PathVariable String graphId) {
+    public String getGraphJson(@PathVariable("graphId") String graphId) {
         return service.getGraphJson(graphId);
     }
 
     @GetMapping("/graphs/{graphId}/processors")
-    public List<ProcessorDto> listGraphProcessors(@PathVariable String graphId) {
+    public List<ProcessorDto> listGraphProcessors(@PathVariable("graphId") String graphId) {
         return service.listGraphProcessors(graphId);
     }
 
@@ -68,33 +68,33 @@ public class AgentsGraphAdminController {
     }
 
     @GetMapping("/executions")
-    public List<ExecutionDto> listExecutions(@RequestParam(required = false) String status,
-                                              @RequestParam(required = false) String tenantId) {
+    public List<ExecutionDto> listExecutions(@RequestParam(name = "status", required = false) String status,
+                                              @RequestParam(name = "tenantId", required = false) String tenantId) {
         return service.listExecutions(status, tenantId);
     }
 
     @GetMapping("/executions/{flowId}")
-    public ExecutionDto getExecution(@PathVariable String flowId) {
+    public ExecutionDto getExecution(@PathVariable("flowId") String flowId) {
         return service.getExecution(flowId);
     }
 
     @GetMapping(value = "/executions/{flowId}/report", produces = MediaType.TEXT_PLAIN_VALUE)
-    public String getExecutionReport(@PathVariable String flowId) {
+    public String getExecutionReport(@PathVariable("flowId") String flowId) {
         return service.getExecutionReport(flowId);
     }
 
     @GetMapping("/executions/{flowId}/steps")
-    public List<StepDto> listSteps(@PathVariable String flowId) {
+    public List<StepDto> listSteps(@PathVariable("flowId") String flowId) {
         return service.listSteps(flowId);
     }
 
     @GetMapping("/executions/{flowId}/steps/{seq}")
-    public StepDto getStep(@PathVariable String flowId, @PathVariable long seq) {
+    public StepDto getStep(@PathVariable("flowId") String flowId, @PathVariable("seq") long seq) {
         return service.getStep(flowId, seq);
     }
 
     @PostMapping("/executions/{flowId}/steps/{seq}/resume")
-    public ResumeResultDto resume(@PathVariable String flowId, @PathVariable long seq,
+    public ResumeResultDto resume(@PathVariable("flowId") String flowId, @PathVariable("seq") long seq,
                                    @RequestBody(required = false) ResumeRequest request) {
         return service.resume(flowId, seq, request == null ? Map.of() : request.getOverrides());
     }
