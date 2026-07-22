@@ -59,7 +59,9 @@ subprojects {
 
     // Module directories/project names stay short (context, config, engine, ...); published
     // jars are still named agentsgraph-<module> so they're unambiguous on a classpath.
-    archivesBaseName = "agentsgraph-${project.name}"
+    base {
+        archivesName = "agentsgraph-${project.name}"
+    }
 
     java {
         sourceCompatibility = JavaVersion.VERSION_11

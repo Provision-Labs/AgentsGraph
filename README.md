@@ -46,7 +46,7 @@ Operational interfaces built on top of the trace store.
 
 ## 🧩 Project Modules
 
-This repository is a multi-module Gradle 7 project (`agentsgraph-parent`) mirroring the 5-layer
+This repository is a multi-module Gradle project (wrapper: Gradle 8.14, runs on JDK 17-24) (`agentsgraph-parent`) mirroring the 5-layer
 architecture above. Each layer lives in its own module so it can be depended on independently;
 `core` wires everything together with sane in-memory defaults.
 
