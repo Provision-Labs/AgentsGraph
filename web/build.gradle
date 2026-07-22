@@ -1,0 +1,16 @@
+description = 'AgentsGraph :: Web admin API - REST endpoints over the engine (graphs, processors, traces, step debug, resume) for the AgentsGraph UI'
+
+// Spring Framework 6 requires Java 17 - only this module and the starter do; the framework's
+// own layers stay on the parent's Java 11 baseline.
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+dependencies {
+    api project(':core')
+
+    implementation "com.fasterxml.jackson.core:jackson-databind:${rootProject.ext.jacksonVersion}"
+    implementation "org.springframework:spring-web:${rootProject.ext.springVersion}"
+    implementation "org.springframework:spring-context:${rootProject.ext.springVersion}"
+}

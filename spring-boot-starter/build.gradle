@@ -1,0 +1,14 @@
+description = 'AgentsGraph :: Spring Boot starter - auto-configures JDBC stores, the engine and the web admin API from a DataSource'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+dependencies {
+    api project(':web')
+
+    implementation "org.springframework.boot:spring-boot:${rootProject.ext.springBootVersion}"
+    implementation "org.springframework.boot:spring-boot-autoconfigure:${rootProject.ext.springBootVersion}"
+    implementation "org.springframework:spring-webmvc:${rootProject.ext.springVersion}"
+}

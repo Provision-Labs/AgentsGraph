@@ -33,6 +33,8 @@ ext {
     junitVersion = rootProject.property('junitVersion')
     assertjVersion = rootProject.property('assertjVersion')
     h2Version = rootProject.property('h2Version')
+    springVersion = rootProject.property('springVersion')
+    springBootVersion = rootProject.property('springBootVersion')
 
     publishReleaseRepoUrl = releaseRepoUrl
     publishSnapshotRepoUrl = snapshotRepoUrl
