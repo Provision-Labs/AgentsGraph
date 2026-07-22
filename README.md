@@ -68,7 +68,8 @@ Build with the bundled wrapper — no local Gradle install required:
 gradlew.bat build     # Windows
 ```
 
-Requires JDK 11+.
+Requires JDK 17+ to build (the `admin-server` module is Spring Boot 3); the library modules
+themselves stay compatible with Java 11 (`sourceCompatibility = 11`).
 
 ## 📦 Publishing
 
