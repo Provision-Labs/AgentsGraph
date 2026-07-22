@@ -1,4 +1,4 @@
-package io.provisionlabs.agentsgraph.demo;
+package io.provisionlabs.agentsgraph.server;
 
 import io.provisionlabs.agentsgraph.AgentsGraphEngine;
 import io.provisionlabs.agentsgraph.config.EdgeDefinition;
@@ -10,21 +10,30 @@ import io.provisionlabs.agentsgraph.context.ExecutionContext;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 
+import javax.sql.DataSource;
 import java.util.Map;
 
 /**
- * The README's minimal AgentsGraph admin-API server, runnable as-is - pure in-memory mode: the
- * engine below overrides the starter's DataSource-based store beans (every starter bean is
- * {@code @ConditionalOnMissingBean}), and the starter contributes the {@code /api/agentsgraph/**}
- * REST API around it. On startup two debug flows are executed (one succeeds, one fails at the
- * LLM step), so the AgentsGraph UI has graphs, executions AND step traces to show immediately -
- * including a failed step that can be resumed from the UI.
+ * The runnable AgentsGraph admin-API server - the backend of the
+ * <a href="https://github.com/Provision-Labs/agentsgraph-ui">AgentsGraph UI</a>, started straight
+ * from this build:
  *
- * <p>For the database-backed mode, delete the {@code agentsGraphEngine}/{@code demoFlows} beans,
- * add {@code spring-boot-starter-jdbc} + a driver, and set {@code spring.datasource.*} - see
- * {@code application.properties}.
+ * <pre>{@code ./gradlew :server:bootRun }</pre>
+ *
+ * <p><b>Default: pure in-memory mode.</b> The engine bean below overrides the starter's
+ * DataSource-based store beans (every starter bean is {@code @ConditionalOnMissingBean}), and the
+ * starter contributes the {@code /api/agentsgraph/**} REST API around it. On startup two DEBUG
+ * flows are executed (one succeeds, one fails at the LLM step), so the UI has graphs, executions
+ * AND step traces to show immediately - including a failed step that can be resumed from the UI.
+ *
+ * <p><b>Database-backed mode.</b> Uncomment {@code spring-boot-starter-jdbc} + the driver in this
+ * module's {@code build.gradle} and set {@code spring.datasource.*} in
+ * {@code application.properties}: the demo beans below back off automatically (they are
+ * conditional on there being no {@code DataSource}), and the starter wires the three JDBC stores
+ * (schemas self-provisioned) over the real database instead.
  */
 @SpringBootApplication
 public class AgentsGraphServer {
@@ -34,6 +43,7 @@ public class AgentsGraphServer {
     }
 
     @Bean
+    @ConditionalOnMissingBean(DataSource.class)
     public AgentsGraphEngine agentsGraphEngine() {
         AgentsGraphEngine engine = AgentsGraphEngine.inMemory();
 
@@ -61,6 +71,7 @@ public class AgentsGraphServer {
 
     /** Seeds the trace stores with one successful and one failed DEBUG run for the UI to show. */
     @Bean
+    @ConditionalOnMissingBean(DataSource.class)
     public CommandLineRunner demoFlows(AgentsGraphEngine engine) {
         return args -> {
             engine.executeDebug("demo",

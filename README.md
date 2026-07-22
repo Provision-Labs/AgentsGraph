@@ -61,6 +61,7 @@ architecture above. Each layer lives in its own module so it can be depended on 
 | `test` | Test kit | `AgentsGraphTestHarness`, `MockProcessor` and `SqlScriptRunner` — run a real graph (deployed by the same SQL script production uses) with selected processors replaced by scripted mocks, so tests exercise routing/threading/fallback/tracing with zero network calls and zero AI-API token spend. | `core` |
 | `web` | Admin API | `AgentsGraphAdminService` + `AgentsGraphAdminController` — the REST backend of the [AgentsGraph UI](https://github.com/Provision-Labs/agentsgraph-ui): graph list/JSON, graph-scoped processors, execution traces, debug step traces (parsed in/out) and resume-from-step, all read through the engine's own stores. Java 17 / Spring Framework 6. | `core` |
 | `spring-boot-starter` | Starter | Auto-configuration: point a Spring Boot 3 app at a `DataSource` and get the three JDBC stores, the engine and the `/api/agentsgraph/**` admin API with zero wiring; every bean is `@ConditionalOnMissingBean`, so apps that wire their own stores/engine keep them. | `web` |
+| `server` | Runnable server | `AgentsGraphServer` — the admin API server started straight from this build (`./gradlew :server:bootRun`): in-memory demo mode by default, database-backed via `spring.datasource.*`. Not published to Maven — it's an application, not a library. | `spring-boot-starter` |
 
 Build with the bundled wrapper — no local Gradle install required:
 
@@ -387,9 +388,21 @@ ExecutionContext replayed = harness.execute("ocr-accounting", originalInput);
 The `web` + `spring-boot-starter` modules turn any Spring Boot 3 application (Java 17) into the
 backend of the [AgentsGraph UI](https://github.com/Provision-Labs/agentsgraph-ui) - the
 `/api/agentsgraph/**` REST API over graphs, processors, execution traces, step-level debug and
-resume. A minimal server is one build file and one class - a runnable copy of everything below
-lives in [`examples/demo-server`](examples/demo-server) (pure in-memory mode, pre-seeded with a
-demo graph plus one successful and one failed debug run, so the UI has data immediately):
+resume. This repository ships one ready to run - the [`server`](server) module:
+
+```bash
+./gradlew :server:bootRun
+curl http://localhost:8080/api/agentsgraph/graphs
+```
+
+By default it runs in pure in-memory mode, pre-seeded with a demo graph plus one successful and
+one failed debug run - so the AgentsGraph UI has graphs, executions and a resumable failed step
+to show immediately. Switching it to a real database is a two-line change (uncomment
+`spring-boot-starter-jdbc` + the driver in [`server/build.gradle`](server/build.gradle), set
+`spring.datasource.*` in [`application.properties`](server/src/main/resources/application.properties) -
+the demo in-memory beans back off automatically when a `DataSource` appears).
+
+For your own application, a minimal server is one build file and one class:
 
 ```gradle
 // build.gradle of your server project
