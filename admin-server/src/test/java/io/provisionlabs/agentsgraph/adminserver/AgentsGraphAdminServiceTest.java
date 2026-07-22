@@ -1,6 +1,7 @@
 package io.provisionlabs.agentsgraph.adminserver;
 
 import io.provisionlabs.agentsgraph.AgentsGraphEngine;
+import io.provisionlabs.agentsgraph.adminserver.service.AgentsGraphAdminService;
 import io.provisionlabs.agentsgraph.config.EdgeDefinition;
 import io.provisionlabs.agentsgraph.config.GraphDefinition;
 import io.provisionlabs.agentsgraph.config.NodeDefinition;

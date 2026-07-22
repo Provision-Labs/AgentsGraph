@@ -11,7 +11,7 @@ import java.util.Set;
  * <p>All mutations go through dedicated methods (rather than mutating a {@link TraceRecord}
  * returned by {@link #find}) so that implementations backed by a database, and not just plain
  * in-memory maps, can write changes through correctly.
- */
+// */
 public interface TraceStore {
 
     TraceRecord startFlow(String flowId, String tenantId);

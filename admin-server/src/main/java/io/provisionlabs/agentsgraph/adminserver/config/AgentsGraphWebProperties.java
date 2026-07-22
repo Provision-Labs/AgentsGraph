@@ -1,4 +1,4 @@
-package io.provisionlabs.agentsgraph.adminserver;
+package io.provisionlabs.agentsgraph.adminserver.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 

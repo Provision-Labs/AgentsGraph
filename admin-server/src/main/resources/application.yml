@@ -5,7 +5,9 @@
 #
 #   ./gradlew :admin-server:bootRun --args='--spring.profiles.active=db'
 #
-spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+#spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
 
 # Allow the AgentsGraph UI dev server (npm start on :4200) to call the API cross-origin.
-agentsgraph.web.cors-origins=http://localhost:4200
+agentsgraph:
+  web:
+    cors-origins: http://localhost:4200

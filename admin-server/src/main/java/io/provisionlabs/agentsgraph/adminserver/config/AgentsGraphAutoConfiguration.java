@@ -1,6 +1,8 @@
-package io.provisionlabs.agentsgraph.adminserver;
+package io.provisionlabs.agentsgraph.adminserver.config;
 
 import io.provisionlabs.agentsgraph.AgentsGraphEngine;
+import io.provisionlabs.agentsgraph.adminserver.AgentsGraphAdminController;
+import io.provisionlabs.agentsgraph.adminserver.service.AgentsGraphAdminService;
 import io.provisionlabs.agentsgraph.config.ConfigStore;
 import io.provisionlabs.agentsgraph.config.ProcessorDefinitionStore;
 import io.provisionlabs.agentsgraph.config.jdbc.JdbcConfigStore;

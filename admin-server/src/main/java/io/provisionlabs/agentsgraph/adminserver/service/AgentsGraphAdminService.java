@@ -1,8 +1,9 @@
-package io.provisionlabs.agentsgraph.adminserver;
+package io.provisionlabs.agentsgraph.adminserver.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.provisionlabs.agentsgraph.AgentsGraphEngine;
+import io.provisionlabs.agentsgraph.adminserver.AgentsGraphAdminController;
 import io.provisionlabs.agentsgraph.config.EdgeDefinition;
 import io.provisionlabs.agentsgraph.config.GraphDefinition;
 import io.provisionlabs.agentsgraph.config.ProcessorDefinition;
