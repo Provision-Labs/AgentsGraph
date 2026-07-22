@@ -28,8 +28,3 @@ spring:
       on-profile: db
   autoconfigure:
     exclude: ""
-  datasource:
-    driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://localhost:5432/docscan
-    username: docscan
-    password: docscan
