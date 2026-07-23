@@ -1,0 +1,51 @@
+description = 'AgentsGraph :: Admin server - REST API + Spring Boot auto-configuration + runnable main (./gradlew :admin-server:bootRun), the backend of the AgentsGraph UI'
+
+apply plugin: 'org.springframework.boot'
+apply plugin: 'io.spring.dependency-management'
+
+// Spring Boot 3 / Spring Framework 6 require Java 17 - only this module does; the framework's
+// own layers stay on the parent's Java 11 baseline.
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+dependencies {
+    api project(':core')
+
+    implementation "com.fasterxml.jackson.core:jackson-databind:${rootProject.ext.jacksonVersion}"
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+
+    // Database mode ships ready to go: the PostgreSQL driver is always on the classpath, and
+    // Boot's DataSource auto-configuration is EXCLUDED in the default application.properties so
+    // the in-memory demo mode still starts without a database - activate the 'db' profile
+    // (application-db.properties) to connect for real.
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    runtimeOnly 'org.postgresql:postgresql'
+    // runtimeOnly "com.h2database:h2:${rootProject.ext.h2Version}"     // for an in-memory H2 database instead
+
+    testImplementation project(':test')   // SqlScriptRunner for seeding the H2 database
+    testImplementation "org.springframework:spring-test:${rootProject.ext.springVersion}"
+    testImplementation 'org.springframework.boot:spring-boot-test'
+    testImplementation 'org.springframework.boot:spring-boot-test-autoconfigure'
+    testImplementation 'jakarta.servlet:jakarta.servlet-api'
+    testImplementation 'com.jayway.jsonpath:json-path'
+    testImplementation 'org.hamcrest:hamcrest'
+    testImplementation "com.h2database:h2:${rootProject.ext.h2Version}"
+}
+
+// This module is BOTH a library (the auto-configured admin API, published as a plain jar for
+// applications like WebVane to depend on) and a runnable server (bootRun / bootJar for
+// standalone deployment) - so keep the plain jar as the publication artifact and give the
+// executable fat jar a classifier.
+jar {
+    enabled = true
+    archiveClassifier = ''
+    // The demo application*.properties belong to the RUNNABLE server only (bootRun/bootJar) -
+    // shipped inside the library jar they would shadow the consuming application's own properties.
+    exclude 'application*.properties'
+}
+
+bootJar {
+    archiveClassifier = 'boot'
+}

@@ -11,9 +11,12 @@ import java.util.Set;
  */
 public final class TraceRecord {
 
+    private volatile long startedAtMillis;
+
     private final String flowId;
     private final String tenantId;
     private volatile ExecutionStatus status = ExecutionStatus.RUNNING;
+    private volatile String error;
     private final Set<String> tags = new LinkedHashSet<>();
     private final Telemetry telemetry = new Telemetry();
     private final List<ExecutionEvent> auditLog = new ArrayList<>();
@@ -27,6 +30,15 @@ public final class TraceRecord {
         return flowId;
     }
 
+    /** Epoch millis of {@code startFlow} - set by the store, used to sort executions by date. */
+    public long getStartedAtMillis() {
+        return startedAtMillis;
+    }
+
+    public void setStartedAtMillis(long startedAtMillis) {
+        this.startedAtMillis = startedAtMillis;
+    }
+
     public String getTenantId() {
         return tenantId;
     }
@@ -37,6 +49,19 @@ public final class TraceRecord {
 
     public void setStatus(ExecutionStatus status) {
         this.status = status;
+    }
+
+    /**
+     * The failure that put this flow into {@link ExecutionStatus#ERROR}/{@link
+     * ExecutionStatus#FAILED} - typically the exception's stack trace, or a plain error message.
+     * {@code null} for flows that never failed.
+     */
+    public String getError() {
+        return error;
+    }
+
+    public void setError(String error) {
+        this.error = error;
     }
 
     public Set<String> getTags() {

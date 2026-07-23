@@ -73,6 +73,13 @@ public final class ExecutionContext {
         return new ExecutionContext(flowId, traceId, parentId, inputData, merged, metadata, contextSchema);
     }
 
+    /** Produces a new snapshot with additional entries merged into {@code metadata}. */
+    public ExecutionContext withMergedMetadata(Map<String, Object> additionalMetadata) {
+        Map<String, Object> merged = new LinkedHashMap<>(metadata);
+        merged.putAll(additionalMetadata);
+        return new ExecutionContext(flowId, traceId, parentId, inputData, accumulatedState, merged, contextSchema);
+    }
+
     /** Produces a new snapshot representing a child step, with {@code this.flowId} as its parent. */
     public ExecutionContext asChild() {
         return new ExecutionContext(

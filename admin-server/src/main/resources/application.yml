@@ -1,0 +1,34 @@
+# DEFAULT: pure in-memory demo mode. When no profile is set explicitly, the 'inmemory' profile
+# activates (spring.profiles.default) and AgentsGraphDemo provides the engine + seeded flows.
+# The PostgreSQL driver is on the classpath, but Boot must not try to build a DataSource in this
+# mode (there is no database), so its auto-configuration is excluded here.
+# The AgentsGraph UI's dev-server proxy targets this port by default (agentsgraph-ui/proxy.conf.json).
+server:
+  port: 31333
+
+spring:
+  profiles:
+    default: inmemory
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+
+# Allow the AgentsGraph UI dev server (npm start on :4200) to call the API cross-origin.
+agentsgraph:
+  web:
+    cors-origins: http://localhost:4200
+
+---
+# DATABASE-BACKED MODE - activate with:
+#
+#   ./gradlew :admin-server:bootRun --args='--spring.profiles.active=db'
+#
+# Switches the demo off entirely (AgentsGraphDemo is @Profile("inmemory")), re-enables Boot's
+# DataSource auto-configuration and connects with org.postgresql.Driver; the admin-server
+# auto-configuration then wires the three JDBC stores (schemas self-provisioned) over it.
+# Override any of these per environment (SPRING_DATASOURCE_URL=... etc.).
+spring:
+  config:
+    activate:
+      on-profile: db
+  autoconfigure:
+    exclude: ""

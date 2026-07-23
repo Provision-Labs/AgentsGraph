@@ -33,7 +33,7 @@ The core execution loop that maps conceptual Agent phases to technical component
 
 **4️⃣ Status & Trace Store (Observability)**  
 Time-series indexed storage for every execution lifecycle event.
-- Tracking: `flow_id`, `status` (`running|completed|failed|paused`)
+- Tracking: `flow_id`, `status` (`running|completed|error|failed|paused`)
 - Dynamic tagging: `tags: ["vip", "billing", "auto_routed", "needs_review"]`
 - Telemetry: `{duration_ms, token_cost, step_count, retry_attempts}`
 - Audit log: `[{node_id, routing_decision, timestamp, context_snapshot}]`
@@ -46,7 +46,7 @@ Operational interfaces built on top of the trace store.
 
 ## 🧩 Project Modules
 
-This repository is a multi-module Gradle 7 project (`agentsgraph-parent`) mirroring the 5-layer
+This repository is a multi-module Gradle project (wrapper: Gradle 8.14, runs on JDK 17-24) (`agentsgraph-parent`) mirroring the 5-layer
 architecture above. Each layer lives in its own module so it can be depended on independently;
 `core` wires everything together with sane in-memory defaults.
 
@@ -59,6 +59,7 @@ architecture above. Each layer lives in its own module so it can be depended on 
 | `control` | Control Plane & Analytics | Query/replay API (`ControlPlane`) built on top of the trace store, backing `GET /executions` and replay/debug use cases, plus `GraphClassifier`/`TemplateGraphClassifier` for picking which graph should handle a given input. | `trace`, `context`, `config` |
 | `core` | Facade | `AgentsGraphEngine` — a single entry point that deploys graphs, loads/reloads processors from the DB, runs flows (sync/async) and classifies inputs across all five layers. Constructed from `ConfigStore`/`ProcessorDefinitionStore`/`TraceStore` *implementations* — it never touches a `DataSource` or any other storage detail itself; each JDBC store ensures its own schema on construction. | all of the above |
 | `test` | Test kit | `AgentsGraphTestHarness`, `MockProcessor` and `SqlScriptRunner` — run a real graph (deployed by the same SQL script production uses) with selected processors replaced by scripted mocks, so tests exercise routing/threading/fallback/tracing with zero network calls and zero AI-API token spend. | `core` |
+| `admin-server` | Admin API server | One module, three hats: the REST backend of the [AgentsGraph UI](https://github.com/Provision-Labs/agentsgraph-ui) (`AgentsGraphAdminService`/`AgentsGraphAdminController` - graphs, processors, execution traces, debug step traces with parsed in/out, resume-from-step), Spring Boot auto-configuration (add the jar to any Boot 3 app with a `DataSource` - every bean is `@ConditionalOnMissingBean`), and a runnable server (`./gradlew :admin-server:bootRun`). Java 17 / Spring Boot 3. | `core` |
 
 Build with the bundled wrapper — no local Gradle install required:
 
@@ -67,7 +68,8 @@ Build with the bundled wrapper — no local Gradle install required:
 gradlew.bat build     # Windows
 ```
 
-Requires JDK 11+.
+Requires JDK 17+ to build (the `admin-server` module is Spring Boot 3); the library modules
+themselves stay compatible with Java 11 (`sourceCompatibility = 11`).
 
 ## 📦 Publishing
 
@@ -252,6 +254,12 @@ What the runtime actually guarantees:
   same `fallback_edge_id` also covers a *successfully routed* edge whose own step pipeline later
   throws - the orchestrator re-routes to the fallback edge with the failure message merged into
   the context under `pipeline_error`, so the graph can shape a user-facing error response.
+- **Fallback IS an error**: *any* `fallback_edge_id` activation - routing fallback or edge-step
+  failure - is treated as a failure, not silently absorbed: it's logged through SLF4J with the
+  original exception attached (never lost in wrapper layers), the failure reason/stack trace is
+  persisted into the trace record's `error` field, and the flow finishes with status `error`
+  (never `completed`). A failure with no fallback configured propagates with its cause attached
+  and leaves the flow `failed`.
 - **`output_mapping`** projects the delegate's `raw` output map into the context *before* the
   selected edge runs: each mapping key is a key in `DelegateResult.getRaw()`, each value is the
   context key it's stored under. Downstream steps read the classification the same way they read
@@ -303,6 +311,224 @@ Note how `edge_classify` saves `documentType` into the context and `classify_rou
 declaratively, and how `output_to_next` between steps of the same edge *replaces* what the next
 step sees (an empty/absent list forwards everything) - a step must explicitly re-forward keys a
 later step still needs.
+
+## 🐛 Debug Mode: Step-Level Tracing & Resume
+
+Normal tracing records per-node snapshots; **debug mode** goes one level deeper - every *step*
+inside every edge is recorded into the `TraceStore`'s step-level trace (`agentsgraph_step_trace` when JDBC-backed)
+with the FULL context it saw on input, its raw output, timing, and - on failure - the stack trace:
+
+```java
+ExecutionContext result = engine.executeDebug("ocr-accounting", context); // or metadata agentsgraph_debug=true
+List<StepTraceRecord> steps = engine.getStepTraces(result.getFlowId());   // execution order (seq)
+```
+
+Because each record's input snapshot is the *complete* context (not a delta), every step is an
+independent restart point. `resumeFrom` rebuilds the context from the recorded snapshot and
+re-enters the graph at exactly that step - earlier steps (e.g. an expensive OCR call) do **not**
+run again:
+
+```java
+// The flow failed at the LLM step? Fix the processor (or the data), then:
+ExecutionContext resumed = engine.resumeFrom(flowId, failedStep.getSeq());
+// ...or resume on corrected data without re-running anything upstream:
+engine.resumeFrom(flowId, seq, Map.of("json", correctedOcrJson));
+```
+
+The resumed run is a NEW flow (metadata carries `parent_flow_id`/`resumed_from_seq` for lineage),
+runs in debug mode itself (so it can be resumed again), and executes everything from the resume
+point **live** - replaying recorded answers instead is what the `agentsgraph-test` mock harness
+is for (`harness.executeDebug` / `harness.stepTraces` / `harness.resumeFrom` wrap the same API).
+
+What to know before relying on it:
+
+- **Zero overhead when off**: a non-debug run never touches the step-trace store - the tracer is
+  a no-op singleton.
+- **Serialization is defensive, per value** (`ContextJsonCodec`): `byte[]` round-trips via base64;
+  a value Jackson can't serialize becomes an `__unserializable__` placeholder; a value over the
+  size limit (1 MB by default) becomes `__truncated__`. Either marker flags the record
+  `restartable=false` - still fully inspectable, but `resumeFrom` refuses it.
+- **Type fidelity**: plain JSON-like values (maps, lists, strings, numbers, booleans, `byte[]`)
+  round-trip exactly; rich POJOs come back as `Map`s on resume.
+- **Version pinning**: each record stores the graph version it ran against; resuming after the
+  graph changed logs a warning and executes against the CURRENT graph.
+- **Retention**: `traceStore.deleteStepsOlderThan(epochMillis)` - debug traces are heavyweight by
+  design; clean them up.
+
+### Dump, inspect, replay
+
+Three tools turn a recorded debug run into a shareable, reproducible artifact:
+
+```java
+String dump   = engine.dumpStepTraces(flowId);   // self-contained JSON - attach to the bug report
+String report = engine.describeFlow(flowId);     // plain-text status + step table - the payload
+                                                 // for your admin endpoint / actuator / CLI
+```
+
+`describeFlow` works for any flow (for a non-debug one it reports status/tags/error and says step
+traces are absent); the framework deliberately ships the *report*, not the HTTP endpoint - expose
+it through whatever ops surface the application already has.
+
+The dump closes the loop with the test kit: `harness.mocksFromDump(dump)` registers a
+`MockProcessor.returningSequence` for every processor that succeeded in the recording, answering
+with the recorded outputs in the recorded order - so a flow captured against production replays
+locally with the exact same external-service answers and zero network. A recorded *failure* is
+deliberately not replayed: fix the processor, replay the run, and every upstream answer stays as
+it was.
+
+```java
+// CI regression test from a production incident:
+harness.mocksFromDump(dumpJson, "docscan-ocr", "llm-completion"); // only the external steps
+ExecutionContext replayed = harness.execute("ocr-accounting", originalInput);
+```
+
+## 🖥️ Building & Running the Admin API Server
+
+The `admin-server` module turns any Spring Boot 3 application (Java 17) into the
+backend of the [AgentsGraph UI](https://github.com/Provision-Labs/agentsgraph-ui) - the
+`/api/agentsgraph/**` REST API over graphs, processors, execution traces, step-level debug and
+resume. This repository ships one ready to run - the [`server`](server) module:
+
+```bash
+./gradlew :admin-server:bootRun
+curl http://localhost:31333/api/agentsgraph/graphs
+```
+
+By default it runs in pure in-memory mode, pre-seeded with a demo graph plus one successful and
+one failed debug run - so the AgentsGraph UI has graphs, executions and a resumable failed step
+to show immediately. The PostgreSQL driver ships with it - switch to a real database by
+activating the `db` profile with your `spring.datasource.*`
+(see [`application-db.properties`](admin-server/src/main/resources/application-db.properties);
+the demo in-memory beans back off automatically when a `DataSource` appears):
+
+```bash
+./gradlew :admin-server:bootRun --args='--spring.profiles.active=db'
+```
+
+For your own application, a minimal server is one build file and one class:
+
+```gradle
+// build.gradle of your server project
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.15'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+java { sourceCompatibility = JavaVersion.VERSION_17 }
+repositories {
+    mavenCentral()
+    maven { url = 'https://your-nexus/repository/maven-releases/' }  // where agentsgraph-* is published
+}
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'   // provides the DataSource (DB modes)
+    implementation 'io.provisionlabs:agentsgraph-admin-server:0.5.0'
+    runtimeOnly 'org.postgresql:postgresql'   // or com.h2database:h2 for the in-memory database
+}
+```
+
+```java
+@SpringBootApplication
+public class AgentsGraphServer {
+    public static void main(String[] args) {
+        SpringApplication.run(AgentsGraphServer.class, args);
+    }
+}
+```
+
+Build and run:
+
+```bash
+./gradlew build
+./gradlew bootRun
+curl http://localhost:8080/api/agentsgraph/graphs   # your app, its own port
+```
+
+### Database-backed (production shape)
+
+Point the application at the database - nothing else. The starter auto-configures
+`JdbcConfigStore`/`JdbcProcessorDefinitionStore`/`JdbcTraceStore` over the `DataSource` (each
+provisions its own `agentsgraph_*` schema on startup), the engine, and the REST API:
+
+```properties
+# application.properties
+spring.datasource.url=jdbc:postgresql://localhost:5432/docscan
+spring.datasource.username=docscan
+spring.datasource.password=...
+
+# Only when the UI dev server runs on another origin (npm start on :4200):
+agentsgraph.web.cors-origins=http://localhost:4200
+```
+
+Deploy graphs and processors the DB-first way - the same SQL scripts production uses (`INSERT
+INTO agentsgraph_graph_config / agentsgraph_processor ...`, see `examples/sql/docscan-schema.sql`
+and WebVane's `db/postgres/docscan_graph/data.sql`); the engine picks up config changes without
+a restart (graphs on the next execution, processor rows after `engine.reload()`).
+
+**In-memory *database* variant** - zero install, still exercises the real JDBC stores (data lives
+until the JVM exits):
+
+```properties
+spring.datasource.url=jdbc:h2:mem:agentsgraph;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+spring.datasource.username=sa
+```
+
+`MODE=PostgreSQL` lets the production PostgreSQL deployment scripts run verbatim against H2 -
+exactly what the `agentsgraph-test` harness does.
+
+### Pure in-memory stores (no database at all)
+
+Every starter bean is `@ConditionalOnMissingBean`, so defining your own engine switches the whole
+stack to in-memory stores while the starter still contributes the admin service/controller around
+it - handy for demos and UI development:
+
+```java
+@SpringBootApplication
+public class AgentsGraphServer {
+
+    public static void main(String[] args) {
+        SpringApplication.run(AgentsGraphServer.class, args);
+    }
+
+    @Bean
+    public AgentsGraphEngine agentsGraphEngine() {
+        AgentsGraphEngine engine = AgentsGraphEngine.inMemory();
+        engine.registerProcessor("echo", (context, step) ->
+                Map.of("answer", "echo: " + context.getInputData().get("text")));
+        engine.deployGraph(GraphJsonMapper.fromJson("{"
+                + "\"id\": \"demo\", \"version\": \"v1\", \"entry_node_id\": \"n0\","
+                + "\"nodes\": [{\"id\": \"n0\", \"routing_strategy\": \"rules\", \"routing_table\": {\"default\": \"e0\"}}],"
+                + "\"edges\": [{\"id\": \"e0\", \"steps\": [{\"id\": \"s0\", \"processor_id\": \"echo\"}]}]"
+                + "}"));
+        return engine;
+    }
+}
+```
+
+(No `spring-boot-starter-jdbc`/driver dependency needed in this mode.) Executions and debug step
+traces are recorded in process memory and vanish on restart. Trigger a debug run to have
+something to look at in the UI:
+
+```java
+engine.executeDebug("demo", ExecutionContext.newFlow(Map.of("text", "hello"), Map.of()));
+```
+
+### Hooking up the UI
+
+```bash
+git clone https://github.com/Provision-Labs/agentsgraph-ui && cd agentsgraph-ui
+npm install
+npm start        # ng serve, proxies /api -> http://localhost:31333 (the admin server default)
+```
+
+Open http://localhost:4200 - graphs, processors, executions and (for debug-mode flows) the
+step-level in/out viewer with resume-from-step.
+
+### An existing application as the backend
+
+An app that already wires its own stores/engine (e.g. WebVane's docscan module via Spring XML)
+just adds the starter dependency: `@ConditionalOnMissingBean` keeps every existing bean, and only
+the missing admin service/controller are contributed on top of them.
 
 ## 🧪 Testing Without AI APIs
 

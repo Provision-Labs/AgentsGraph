@@ -3,6 +3,9 @@ description = 'AgentsGraph :: Layer 4 - Status & Trace Store (execution events, 
 dependencies {
     api project(':context')
 
+    // ContextJsonCodec serializes step-trace context snapshots.
+    implementation "com.fasterxml.jackson.core:jackson-databind:${rootProject.ext.jacksonVersion}"
+
     // JdbcTraceStore only needs javax.sql.DataSource (JDK-provided); H2 here is just an
     // in-memory database to exercise it in tests.
     testImplementation "com.h2database:h2:${rootProject.ext.h2Version}"

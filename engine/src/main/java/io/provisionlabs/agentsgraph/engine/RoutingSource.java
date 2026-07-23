@@ -4,5 +4,7 @@ package io.provisionlabs.agentsgraph.engine;
 public enum RoutingSource {
     RULES,
     DELEGATE,
-    FALLBACK
+    FALLBACK,
+    /** Synthetic decision seeding a {@code resumeFrom} run - no routing was evaluated. */
+    RESUME
 }

@@ -40,6 +40,22 @@ public final class MockProcessor implements Processor {
         return new MockProcessor((context, step) -> output);
     }
 
+    /**
+     * Returns the given outputs one per invocation, in order, repeating the last one once the
+     * sequence is exhausted - the shape of a replay fixture: a processor that was invoked N times
+     * in a recorded run answers with its N recorded outputs (see
+     * {@code AgentsGraphTestHarness.mocksFromDump}).
+     */
+    public static MockProcessor returningSequence(List<Map<String, Object>> outputs) {
+        if (outputs == null || outputs.isEmpty()) {
+            throw new IllegalArgumentException("returningSequence needs at least one output");
+        }
+        List<Map<String, Object>> sequence = List.copyOf(outputs);
+        java.util.concurrent.atomic.AtomicInteger next = new java.util.concurrent.atomic.AtomicInteger();
+        return new MockProcessor((context, step) ->
+                sequence.get(Math.min(next.getAndIncrement(), sequence.size() - 1)));
+    }
+
     /** Always throws, simulating an unavailable external service - for testing fallback paths. */
     public static MockProcessor failing(String message) {
         return new MockProcessor((context, step) -> {
