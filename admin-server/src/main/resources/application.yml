@@ -2,6 +2,10 @@
 # activates (spring.profiles.default) and AgentsGraphDemo provides the engine + seeded flows.
 # The PostgreSQL driver is on the classpath, but Boot must not try to build a DataSource in this
 # mode (there is no database), so its auto-configuration is excluded here.
+# The AgentsGraph UI's dev-server proxy targets this port by default (agentsgraph-ui/proxy.conf.json).
+server:
+  port: 31333
+
 spring:
   profiles:
     default: inmemory

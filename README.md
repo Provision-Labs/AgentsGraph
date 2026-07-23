@@ -391,7 +391,7 @@ resume. This repository ships one ready to run - the [`server`](server) module:
 
 ```bash
 ./gradlew :admin-server:bootRun
-curl http://localhost:8080/api/agentsgraph/graphs
+curl http://localhost:31333/api/agentsgraph/graphs
 ```
 
 By default it runs in pure in-memory mode, pre-seeded with a demo graph plus one successful and
@@ -441,7 +441,7 @@ Build and run:
 ```bash
 ./gradlew build
 ./gradlew bootRun
-curl http://localhost:8080/api/agentsgraph/graphs   # -> [] on an empty database
+curl http://localhost:8080/api/agentsgraph/graphs   # your app, its own port
 ```
 
 ### Database-backed (production shape)
@@ -518,7 +518,7 @@ engine.executeDebug("demo", ExecutionContext.newFlow(Map.of("text", "hello"), Ma
 ```bash
 git clone https://github.com/Provision-Labs/agentsgraph-ui && cd agentsgraph-ui
 npm install
-npm start        # ng serve, proxies /api -> http://localhost:8080
+npm start        # ng serve, proxies /api -> http://localhost:31333 (the admin server default)
 ```
 
 Open http://localhost:4200 - graphs, processors, executions and (for debug-mode flows) the
