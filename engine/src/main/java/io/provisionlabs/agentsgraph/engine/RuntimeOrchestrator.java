@@ -96,7 +96,17 @@ public final class RuntimeOrchestrator {
 
     /** Runs {@code graphId} from its entry node to completion, returning the final context snapshot. */
     public ExecutionContext run(String graphId, ExecutionContext initialContext) {
-        return runFlow(graphId, initialContext, null);
+        return runFlow(graphId, initialContext, null, null);
+    }
+
+    /**
+     * Same, with a live progress listener: {@code progressListener} receives
+     * {@code stepStarted}/{@code stepSucceeded}/{@code stepFailed} for every step of this run
+     * (independent of debug mode - it composes with the debug recorder when both are active).
+     * Listener exceptions never break the flow.
+     */
+    public ExecutionContext run(String graphId, ExecutionContext initialContext, StepTracer progressListener) {
+        return runFlow(graphId, initialContext, null, progressListener);
     }
 
     /**
@@ -108,7 +118,7 @@ public final class RuntimeOrchestrator {
      */
     public ExecutionContext resume(String graphId, ExecutionContext initialContext,
                                      String nodeId, String edgeId, int stepIndex) {
-        return runFlow(graphId, initialContext, new ResumePoint(nodeId, edgeId, stepIndex));
+        return runFlow(graphId, initialContext, new ResumePoint(nodeId, edgeId, stepIndex), null);
     }
 
     /** Where a resumed flow re-enters the graph: a specific step of a specific edge. */
@@ -124,12 +134,13 @@ public final class RuntimeOrchestrator {
         }
     }
 
-    private ExecutionContext runFlow(String graphId, ExecutionContext initialContext, ResumePoint resume) {
+    private ExecutionContext runFlow(String graphId, ExecutionContext initialContext, ResumePoint resume,
+                                       StepTracer progressListener) {
         GraphDefinition graph = configStore.getGraph(graphId);
         String tenantId = String.valueOf(initialContext.getMetadata().get("tenant_id"));
         traceStore.startFlow(initialContext.getFlowId(), tenantId);
         long flowStartMillis = System.currentTimeMillis();
-        StepTracer tracer = stepTracerFor(graph, initialContext);
+        StepTracer tracer = StepTracer.compose(stepTracerFor(graph, initialContext), progressListener);
 
         ExecutionContext context = initialContext;
         String currentNodeId = resume != null ? resume.nodeId : graph.getEntryNodeId();
@@ -266,6 +277,13 @@ public final class RuntimeOrchestrator {
     /** Asynchronous counterpart of {@link #run}, executed on this orchestrator's configured executor. */
     public CompletableFuture<ExecutionContext> runAsync(String graphId, ExecutionContext initialContext) {
         return runAsync(graphId, initialContext, asyncExecutor);
+    }
+
+    /** Asynchronous counterpart of {@link #run(String, ExecutionContext, StepTracer)}. */
+    public CompletableFuture<ExecutionContext> runAsync(String graphId, ExecutionContext initialContext,
+                                                          StepTracer progressListener) {
+        return CompletableFuture.supplyAsync(
+                () -> run(graphId, initialContext, progressListener), asyncExecutor);
     }
 
     /** Asynchronous counterpart of {@link #run}, executed on a caller-supplied executor. */

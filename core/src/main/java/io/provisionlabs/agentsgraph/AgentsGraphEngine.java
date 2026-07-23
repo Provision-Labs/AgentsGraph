@@ -219,6 +219,26 @@ public final class AgentsGraphEngine {
     }
 
     /**
+     * Runs the graph with a live progress listener: {@code progressListener} receives
+     * {@code stepStarted}/{@code stepSucceeded}/{@code stepFailed} for every step of this run
+     * (works in normal AND debug mode; composed with the debug recorder). The hook behind
+     * user-facing pipeline progress, e.g. a chatbot's status line. Listener exceptions never
+     * break the flow.
+     */
+    public ExecutionContext execute(String graphId, ExecutionContext initialContext,
+                                     io.provisionlabs.agentsgraph.engine.StepTracer progressListener) {
+        ensureLoaded();
+        return orchestrator.run(graphId, initialContext, progressListener);
+    }
+
+    /** Asynchronous counterpart of {@link #execute(String, ExecutionContext, io.provisionlabs.agentsgraph.engine.StepTracer)}. */
+    public CompletableFuture<ExecutionContext> executeAsync(String graphId, ExecutionContext initialContext,
+                                                              io.provisionlabs.agentsgraph.engine.StepTracer progressListener) {
+        ensureLoaded();
+        return orchestrator.runAsync(graphId, initialContext, progressListener);
+    }
+
+    /**
      * Runs the graph in DEBUG mode: every step's full input context and raw output are recorded
      * into the {@link TraceStore}'s step-level trace (see {@link #getStepTraces}), making the flow inspectable
      * after the fact and resumable from any recorded step via {@link #resumeFrom}. Equivalent to

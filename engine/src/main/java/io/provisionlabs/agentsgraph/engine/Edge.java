@@ -70,6 +70,7 @@ public final class Edge {
             Processor processor = processorRegistry.resolve(step.getProcessorRef());
             ExecutionContext stepContext = stepInput.isEmpty() ? context : context.withMergedState(stepInput);
 
+            tracer.stepStarted(nodeId, definition, step, i, steps.size(), stepContext);
             long startedAt = System.currentTimeMillis();
             long startNanos = System.nanoTime();
             Map<String, Object> stepOutput;
