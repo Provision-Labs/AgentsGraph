@@ -422,7 +422,7 @@ repositories {
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'   // provides the DataSource (DB modes)
-    implementation 'io.provisionlabs:agentsgraph-admin-server:0.4.0'
+    implementation 'io.provisionlabs:agentsgraph-admin-server:0.5.0'
     runtimeOnly 'org.postgresql:postgresql'   // or com.h2database:h2 for the in-memory database
 }
 ```
