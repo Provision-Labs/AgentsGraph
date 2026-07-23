@@ -11,6 +11,8 @@ import java.util.Set;
  */
 public final class TraceRecord {
 
+    private volatile long startedAtMillis;
+
     private final String flowId;
     private final String tenantId;
     private volatile ExecutionStatus status = ExecutionStatus.RUNNING;
@@ -26,6 +28,15 @@ public final class TraceRecord {
 
     public String getFlowId() {
         return flowId;
+    }
+
+    /** Epoch millis of {@code startFlow} - set by the store, used to sort executions by date. */
+    public long getStartedAtMillis() {
+        return startedAtMillis;
+    }
+
+    public void setStartedAtMillis(long startedAtMillis) {
+        this.startedAtMillis = startedAtMillis;
     }
 
     public String getTenantId() {

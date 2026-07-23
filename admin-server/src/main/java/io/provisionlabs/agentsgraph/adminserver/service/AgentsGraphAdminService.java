@@ -13,12 +13,14 @@ import io.provisionlabs.agentsgraph.trace.ExecutionStatus;
 import io.provisionlabs.agentsgraph.trace.StepTraceRecord;
 import io.provisionlabs.agentsgraph.trace.TraceRecord;
 import io.provisionlabs.agentsgraph.adminserver.dto.ExecutionDto;
+import io.provisionlabs.agentsgraph.adminserver.dto.ExecutionPageDto;
 import io.provisionlabs.agentsgraph.adminserver.dto.GraphSummaryDto;
 import io.provisionlabs.agentsgraph.adminserver.dto.ProcessorDto;
 import io.provisionlabs.agentsgraph.adminserver.dto.ResumeResultDto;
 import io.provisionlabs.agentsgraph.adminserver.dto.StepDto;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -91,12 +93,31 @@ public final class AgentsGraphAdminService {
     }
 
     /** Flows from {@code agentsgraph_execution_trace}; {@code null} filters mean "any". */
-    public List<ExecutionDto> listExecutions(String status, String tenantId) {
+    /**
+     * One page of executions, sorted by start date ({@code order} = {@code desc}/{@code asc},
+     * newest first by default; ties broken by flow id for a stable order). {@code null}/blank
+     * filters mean "any".
+     */
+    public ExecutionPageDto listExecutions(String status, String tenantId, int page, int size, String order) {
         ExecutionStatus statusFilter = status == null || status.isBlank()
                 ? null : ExecutionStatus.valueOf(status.trim().toUpperCase());
-        return engine.getTraceStore().query(null, statusFilter, emptyToNull(tenantId)).stream()
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), 500);
+
+        Comparator<TraceRecord> byDate = Comparator.comparingLong(TraceRecord::getStartedAtMillis)
+                .thenComparing(TraceRecord::getFlowId);
+        if (!"asc".equalsIgnoreCase(order)) {
+            byDate = byDate.reversed();
+        }
+
+        List<TraceRecord> all = engine.getTraceStore().query(null, statusFilter, emptyToNull(tenantId))
+                .stream().sorted(byDate).collect(Collectors.toList());
+        List<ExecutionDto> pageItems = all.stream()
+                .skip((long) safePage * safeSize)
+                .limit(safeSize)
                 .map(AgentsGraphAdminService::toDto)
                 .collect(Collectors.toList());
+        return new ExecutionPageDto(pageItems, safePage, safeSize, all.size());
     }
 
     public ExecutionDto getExecution(String flowId) {
@@ -153,9 +174,9 @@ public final class AgentsGraphAdminService {
 
     private static ExecutionDto toDto(TraceRecord record) {
         return new ExecutionDto(record.getFlowId(), record.getTenantId(), record.getStatus().name(),
-                record.getTags(), record.getError(), record.getTelemetry().getStepCount(),
-                record.getTelemetry().getTokenCost(), record.getTelemetry().getDurationMs(),
-                record.getTelemetry().getRetryAttempts());
+                record.getTags(), record.getError(), record.getStartedAtMillis(),
+                record.getTelemetry().getStepCount(), record.getTelemetry().getTokenCost(),
+                record.getTelemetry().getDurationMs(), record.getTelemetry().getRetryAttempts());
     }
 
     private StepDto toDto(StepTraceRecord record) {

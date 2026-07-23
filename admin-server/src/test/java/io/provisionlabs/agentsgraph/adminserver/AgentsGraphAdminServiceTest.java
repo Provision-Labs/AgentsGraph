@@ -95,11 +95,32 @@ class AgentsGraphAdminServiceTest {
         ExecutionContext broken = ExecutionContext.newFlow(Map.of("file", "b.pdf"), Map.of());
         catchThrowable(() -> engine.execute("doc-flow", broken));
 
-        assertThat(service.listExecutions(null, null)).hasSize(2);
-        List<ExecutionDto> failed = service.listExecutions("failed", null);
+        // Pin distinct start times (both flows can start within the same millisecond).
+        engine.getTraceStore().find(ok.getFlowId()).orElseThrow().setStartedAtMillis(1_000);
+        engine.getTraceStore().find(broken.getFlowId()).orElseThrow().setStartedAtMillis(2_000);
+
+        // Newest first by default (the failing run started after the successful one).
+        assertThat(service.listExecutions(null, null, 0, 20, "desc").getItems())
+                .extracting(ExecutionDto::getFlowId)
+                .containsExactly(broken.getFlowId(), ok.getFlowId());
+        assertThat(service.listExecutions(null, null, 0, 20, "asc").getItems())
+                .extracting(ExecutionDto::getFlowId)
+                .containsExactly(ok.getFlowId(), broken.getFlowId());
+
+        // Paging: one item per page, total unchanged.
+        var firstPage = service.listExecutions(null, null, 0, 1, "desc");
+        assertThat(firstPage.getItems()).hasSize(1);
+        assertThat(firstPage.getTotal()).isEqualTo(2);
+        var secondPage = service.listExecutions(null, null, 1, 1, "desc");
+        assertThat(secondPage.getItems())
+                .extracting(ExecutionDto::getFlowId)
+                .containsExactly(ok.getFlowId());
+
+        List<ExecutionDto> failed = service.listExecutions("failed", null, 0, 20, "desc").getItems();
         assertThat(failed).singleElement().satisfies(execution -> {
             assertThat(execution.getFlowId()).isEqualTo(broken.getFlowId());
             assertThat(execution.getError()).contains("LLM down");
+            assertThat(execution.getStartedAtMillis()).isPositive();
         });
         assertThat(service.getExecution(ok.getFlowId()).getStatus()).isEqualTo("COMPLETED");
         assertThat(service.getExecutionReport(ok.getFlowId())).contains("status COMPLETED");

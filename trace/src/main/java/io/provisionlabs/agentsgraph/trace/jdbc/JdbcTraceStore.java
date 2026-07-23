@@ -66,6 +66,7 @@ public final class JdbcTraceStore implements TraceStore {
                             "status VARCHAR(32) NOT NULL, " +
                             "tags TEXT, " +
                             "error TEXT, " +
+                            "started_at BIGINT DEFAULT 0, " +
                             "step_count INT DEFAULT 0, " +
                             "token_cost BIGINT DEFAULT 0, " +
                             "duration_ms BIGINT DEFAULT 0, " +
@@ -73,6 +74,8 @@ public final class JdbcTraceStore implements TraceStore {
             // Upgrade path for tables created before the error column existed (idempotent).
             statement.execute(
                     "ALTER TABLE agentsgraph_execution_trace ADD COLUMN IF NOT EXISTS error TEXT");
+            statement.execute(
+                    "ALTER TABLE agentsgraph_execution_trace ADD COLUMN IF NOT EXISTS started_at BIGINT DEFAULT 0");
             statement.execute(
                     "CREATE TABLE IF NOT EXISTS agentsgraph_step_trace (" +
                             "flow_id VARCHAR(128) NOT NULL, " +
@@ -101,11 +104,13 @@ public final class JdbcTraceStore implements TraceStore {
     public TraceRecord startFlow(String flowId, String tenantId) {
         try (Connection connection = dataSource.getConnection();
              PreparedStatement insert = connection.prepareStatement(
-                     "INSERT INTO agentsgraph_execution_trace (flow_id, tenant_id, status, tags) VALUES (?, ?, ?, ?)")) {
+                     "INSERT INTO agentsgraph_execution_trace (flow_id, tenant_id, status, tags, started_at) " +
+                             "VALUES (?, ?, ?, ?, ?)")) {
             insert.setString(1, flowId);
             insert.setString(2, tenantId);
             insert.setString(3, ExecutionStatus.RUNNING.name());
             insert.setString(4, "");
+            insert.setLong(5, System.currentTimeMillis());
             insert.executeUpdate();
         } catch (SQLException e) {
             // Flow already started (e.g. retried call): fall through and return the existing row.
@@ -176,7 +181,7 @@ public final class JdbcTraceStore implements TraceStore {
     public Optional<TraceRecord> find(String flowId) {
         try (Connection connection = dataSource.getConnection();
              PreparedStatement select = connection.prepareStatement(
-                     "SELECT tenant_id, status, tags, error, step_count, token_cost, duration_ms, retry_attempts " +
+                     "SELECT tenant_id, status, tags, error, started_at, step_count, token_cost, duration_ms, retry_attempts " +
                              "FROM agentsgraph_execution_trace WHERE flow_id = ?")) {
             select.setString(1, flowId);
             try (ResultSet rs = select.executeQuery()) {
@@ -186,6 +191,7 @@ public final class JdbcTraceStore implements TraceStore {
                 TraceRecord record = new TraceRecord(flowId, rs.getString("tenant_id"));
                 record.setStatus(ExecutionStatus.valueOf(rs.getString("status")));
                 record.setError(rs.getString("error"));
+                record.setStartedAtMillis(rs.getLong("started_at"));
                 record.addTags(parseTags(rs.getString("tags")));
                 record.getTelemetry().setDurationMs(rs.getLong("duration_ms"));
                 record.getTelemetry().addTokenCost(rs.getLong("token_cost"));

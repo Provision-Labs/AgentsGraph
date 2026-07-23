@@ -1,6 +1,7 @@
 package io.provisionlabs.agentsgraph.adminserver;
 
 import io.provisionlabs.agentsgraph.adminserver.dto.ExecutionDto;
+import io.provisionlabs.agentsgraph.adminserver.dto.ExecutionPageDto;
 import io.provisionlabs.agentsgraph.adminserver.dto.GraphSummaryDto;
 import io.provisionlabs.agentsgraph.adminserver.dto.ProcessorDto;
 import io.provisionlabs.agentsgraph.adminserver.dto.ResumeRequest;
@@ -69,9 +70,12 @@ public class AgentsGraphAdminController {
     }
 
     @GetMapping("/executions")
-    public List<ExecutionDto> listExecutions(@RequestParam(name = "status", required = false) String status,
-                                              @RequestParam(name = "tenantId", required = false) String tenantId) {
-        return service.listExecutions(status, tenantId);
+    public ExecutionPageDto listExecutions(@RequestParam(name = "status", required = false) String status,
+                                            @RequestParam(name = "tenantId", required = false) String tenantId,
+                                            @RequestParam(name = "page", required = false, defaultValue = "0") int page,
+                                            @RequestParam(name = "size", required = false, defaultValue = "20") int size,
+                                            @RequestParam(name = "order", required = false, defaultValue = "desc") String order) {
+        return service.listExecutions(status, tenantId, page, size, order);
     }
 
     @GetMapping("/executions/{flowId}")

@@ -10,18 +10,21 @@ public final class ExecutionDto {
     private final String status;
     private final Set<String> tags;
     private final String error;
+    private final long startedAtMillis;
     private final int stepCount;
     private final long tokenCost;
     private final long durationMs;
     private final int retryAttempts;
 
     public ExecutionDto(String flowId, String tenantId, String status, Set<String> tags, String error,
-                         int stepCount, long tokenCost, long durationMs, int retryAttempts) {
+                         long startedAtMillis, int stepCount, long tokenCost, long durationMs,
+                         int retryAttempts) {
         this.flowId = flowId;
         this.tenantId = tenantId;
         this.status = status;
         this.tags = tags;
         this.error = error;
+        this.startedAtMillis = startedAtMillis;
         this.stepCount = stepCount;
         this.tokenCost = tokenCost;
         this.durationMs = durationMs;
@@ -46,6 +49,11 @@ public final class ExecutionDto {
 
     public String getError() {
         return error;
+    }
+
+    /** Epoch millis of the flow start - what the executions table sorts by. */
+    public long getStartedAtMillis() {
+        return startedAtMillis;
     }
 
     public int getStepCount() {

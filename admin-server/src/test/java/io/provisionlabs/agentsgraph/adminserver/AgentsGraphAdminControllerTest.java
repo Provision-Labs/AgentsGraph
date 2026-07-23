@@ -75,10 +75,14 @@ class AgentsGraphAdminControllerTest {
         ExecutionContext debug = ExecutionContext.newFlow(Map.of("file", "doc.pdf"), Map.of());
         engine.executeDebug("doc-flow", debug);
 
-        mvc.perform(get("/api/agentsgraph/executions").param("status", "completed"))
+        mvc.perform(get("/api/agentsgraph/executions")
+                        .param("status", "completed").param("page", "0").param("size", "10"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].flowId").value(debug.getFlowId()))
-                .andExpect(jsonPath("$[0].status").value("COMPLETED"));
+                .andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.items[0].flowId").value(debug.getFlowId()))
+                .andExpect(jsonPath("$.items[0].status").value("COMPLETED"))
+                .andExpect(jsonPath("$.items[0].startedAtMillis").isNumber());
 
         mvc.perform(get("/api/agentsgraph/executions/{flowId}/steps", debug.getFlowId()))
                 .andExpect(status().isOk())

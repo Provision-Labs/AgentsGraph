@@ -16,7 +16,11 @@ public final class InMemoryTraceStore implements TraceStore {
 
     @Override
     public TraceRecord startFlow(String flowId, String tenantId) {
-        return records.computeIfAbsent(flowId, id -> new TraceRecord(id, tenantId));
+        return records.computeIfAbsent(flowId, id -> {
+            TraceRecord record = new TraceRecord(id, tenantId);
+            record.setStartedAtMillis(System.currentTimeMillis());
+            return record;
+        });
     }
 
     @Override
