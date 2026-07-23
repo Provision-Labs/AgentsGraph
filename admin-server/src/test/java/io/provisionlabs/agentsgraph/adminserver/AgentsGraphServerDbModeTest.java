@@ -87,9 +87,13 @@ class AgentsGraphServerDbModeTest {
         ExecutionContext flow = ExecutionContext.newFlow(Map.of("text", "hello db"), Map.of());
         engine.executeDebug("db-graph", flow);
 
+        // Date and duration are PERSISTED through the JDBC store - the executions table's
+        // Started/Duration columns depend on the writing side recording them.
         mvc.perform(get("/api/agentsgraph/executions/{flowId}", flow.getFlowId()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("COMPLETED"));
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.startedAtMillis").value(org.hamcrest.Matchers.greaterThan(0L)))
+                .andExpect(jsonPath("$.durationMs").exists());
 
         // The step ran through the reflectively-loaded processor; in/out land in the step trace.
         mvc.perform(get("/api/agentsgraph/executions/{flowId}/steps", flow.getFlowId()))
