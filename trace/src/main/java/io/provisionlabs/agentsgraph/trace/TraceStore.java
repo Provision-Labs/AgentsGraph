@@ -29,6 +29,9 @@ public interface TraceStore {
      */
     void recordError(String flowId, String error);
 
+    /** Persists the flow's total wall-clock duration - set by the orchestrator when the flow ends. */
+    void recordDuration(String flowId, long durationMs);
+
     Optional<TraceRecord> find(String flowId);
 
     /** Executions matching all of the given filters; a {@code null} filter is treated as "any". */

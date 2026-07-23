@@ -44,6 +44,11 @@ public final class InMemoryTraceStore implements TraceStore {
     }
 
     @Override
+    public void recordDuration(String flowId, long durationMs) {
+        requireRecord(flowId).getTelemetry().setDurationMs(durationMs);
+    }
+
+    @Override
     public Optional<TraceRecord> find(String flowId) {
         return Optional.ofNullable(records.get(flowId));
     }

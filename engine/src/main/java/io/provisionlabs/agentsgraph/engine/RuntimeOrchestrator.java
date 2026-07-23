@@ -128,6 +128,7 @@ public final class RuntimeOrchestrator {
         GraphDefinition graph = configStore.getGraph(graphId);
         String tenantId = String.valueOf(initialContext.getMetadata().get("tenant_id"));
         traceStore.startFlow(initialContext.getFlowId(), tenantId);
+        long flowStartMillis = System.currentTimeMillis();
         StepTracer tracer = stepTracerFor(graph, initialContext);
 
         ExecutionContext context = initialContext;
@@ -221,6 +222,8 @@ public final class RuntimeOrchestrator {
             }
             // A flow that only finished thanks to a fallback edge did NOT complete its intended
             // path - report ERROR (with the failure recorded above), never COMPLETED.
+            traceStore.recordDuration(initialContext.getFlowId(),
+                    System.currentTimeMillis() - flowStartMillis);
             traceStore.updateStatus(initialContext.getFlowId(),
                     fellBack ? ExecutionStatus.ERROR : ExecutionStatus.COMPLETED);
             return context;
@@ -228,6 +231,8 @@ public final class RuntimeOrchestrator {
             log.error("Flow '{}' (graph '{}') failed at node '{}': {}",
                     initialContext.getFlowId(), graphId, currentNodeId, e.getMessage(), e);
             traceStore.recordError(initialContext.getFlowId(), stackTraceOf(e));
+            traceStore.recordDuration(initialContext.getFlowId(),
+                    System.currentTimeMillis() - flowStartMillis);
             traceStore.updateStatus(initialContext.getFlowId(), ExecutionStatus.FAILED);
             throw e;
         }

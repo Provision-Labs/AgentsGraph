@@ -178,6 +178,19 @@ public final class JdbcTraceStore implements TraceStore {
     }
 
     @Override
+    public void recordDuration(String flowId, long durationMs) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement update = connection.prepareStatement(
+                     "UPDATE agentsgraph_execution_trace SET duration_ms = ? WHERE flow_id = ?")) {
+            update.setLong(1, durationMs);
+            update.setString(2, flowId);
+            requireRow(update.executeUpdate(), flowId);
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to record duration for flow '" + flowId + "'", e);
+        }
+    }
+
+    @Override
     public Optional<TraceRecord> find(String flowId) {
         try (Connection connection = dataSource.getConnection();
              PreparedStatement select = connection.prepareStatement(
