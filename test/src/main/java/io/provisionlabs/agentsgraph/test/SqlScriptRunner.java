@@ -16,10 +16,10 @@ import java.util.List;
  * fixture seeding {@code agentsgraph_graph_config}/{@code agentsgraph_processor}) against a
  * {@link DataSource} - typically an in-memory H2 standing in for the production database.
  *
- * <p>Full-line {@code --} comments are stripped <em>before</em> statements are split on {@code ;},
- * so semicolons inside comments don't break statement boundaries. Statement bodies (e.g. graph
- * JSON inside an {@code INSERT}) must not contain semicolons - AgentsGraph's own graph JSON
- * dialect never needs one.
+ * <p>The splitter is quote-aware: {@code ;} and {@code --} inside single-quoted SQL string
+ * literals (with the standard {@code ''} escape) are treated as data, not as statement
+ * separators or comments - long seeded texts (prompt templates, graph JSON) may freely contain
+ * both. {@code --} outside string literals starts a comment running to the end of the line.
  */
 public final class SqlScriptRunner {
 
@@ -54,18 +54,53 @@ public final class SqlScriptRunner {
     }
 
     private static List<String> splitStatements(String sql) {
-        // Strip full-line comments first, so a ';' inside a comment can't split a statement.
-        String withoutComments = sql.lines()
-                .filter(line -> !line.trim().startsWith("--"))
-                .reduce((a, b) -> a + "\n" + b).orElse("");
-
+        // Посимвольный проход с учётом строковых литералов: прежний вариант делил по ';' и
+        // отбрасывал '--' построчно, из-за чего ';' или '--' внутри seed-текстов (промпт-шаблоны,
+        // JSON графа) ломали границы стейтментов.
         List<String> statements = new ArrayList<>();
-        for (String part : withoutComments.split(";")) {
-            String trimmed = part.trim();
-            if (!trimmed.isEmpty()) {
-                statements.add(trimmed);
+        StringBuilder current = new StringBuilder();
+        boolean inString = false;
+        for (int i = 0; i < sql.length(); i++) {
+            char ch = sql.charAt(i);
+            if (inString) {
+                current.append(ch);
+                if (ch == '\'') {
+                    if (i + 1 < sql.length() && sql.charAt(i + 1) == '\'') {
+                        current.append('\'');
+                        i++; // экранированная кавычка '' - остаёмся в строке
+                    } else {
+                        inString = false;
+                    }
+                }
+                continue;
             }
+            if (ch == '\'') {
+                inString = true;
+                current.append(ch);
+                continue;
+            }
+            if (ch == '-' && i + 1 < sql.length() && sql.charAt(i + 1) == '-') {
+                while (i < sql.length() && sql.charAt(i) != '\n') {
+                    i++; // комментарий до конца строки
+                }
+                current.append('\n');
+                continue;
+            }
+            if (ch == ';') {
+                addIfNotBlank(statements, current);
+                current.setLength(0);
+                continue;
+            }
+            current.append(ch);
         }
+        addIfNotBlank(statements, current);
         return statements;
+    }
+
+    private static void addIfNotBlank(List<String> statements, StringBuilder current) {
+        String trimmed = current.toString().trim();
+        if (!trimmed.isEmpty()) {
+            statements.add(trimmed);
+        }
     }
 }
