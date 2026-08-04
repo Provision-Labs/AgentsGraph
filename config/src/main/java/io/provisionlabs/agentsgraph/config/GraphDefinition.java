@@ -79,6 +79,15 @@ public final class GraphDefinition {
      * to pick which graph should handle a given input (e.g. {@code "file:accountant"}), mirroring
      * the legacy docscan-pipeline's per-pipeline {@code templates} list.
      */
+    /**
+     * Верхняя оценка числа шагов: сумма шагов всех edges - маршрут заранее неизвестен,
+     * поэтому это максимум, который может исполниться. Основа для прогресс-баров
+     * (см. {@code ProgressStepTracer}).
+     */
+    public int totalStepCount() {
+        return edges.values().stream().mapToInt(edge -> edge.getSteps().size()).sum();
+    }
+
     public List<String> getTemplates() {
         return templates;
     }

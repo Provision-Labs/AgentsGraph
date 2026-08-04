@@ -67,6 +67,30 @@ public final class ExecutionContext {
     }
 
     /** Produces a new snapshot with additional entries merged into {@code accumulated_state}. */
+    /**
+     * Обязательное значение для шага: сначала accumulated state, затем input data. Если ключа
+     * нет или значение null - явное исключение с перечнем доступных ключей, вместо тихого null,
+     * который дальше превращается в строку "null" в промпте или в неверную маршрутизацию
+     * (класс багов "json пропал по дороге").
+     */
+    public Object require(String key) {
+        Object value = accumulatedState.get(key);
+        if (value == null) {
+            value = inputData.get(key);
+        }
+        if (value == null) {
+            throw new IllegalStateException("Required context key '" + key + "' is missing or null"
+                    + " (accumulated keys: " + accumulatedState.keySet()
+                    + ", input keys: " + inputData.keySet() + ")");
+        }
+        return value;
+    }
+
+    /** {@link #require(String)} со строковым результатом - самый частый случай процессоров. */
+    public String requireString(String key) {
+        return String.valueOf(require(key));
+    }
+
     public ExecutionContext withMergedState(Map<String, Object> additionalState) {
         Map<String, Object> merged = new LinkedHashMap<>(accumulatedState);
         merged.putAll(additionalState);
