@@ -63,12 +63,17 @@ public final class Edge {
         }
         Map<String, Object> pipelineOutput = new LinkedHashMap<>();
         Map<String, Object> savedOutputs = new LinkedHashMap<>();
-        Map<String, Object> stepInput = Map.of();
+        // Накопленный вклад ВСЕХ предыдущих шагов (каждый - через свой output_to_next фильтр).
+        // Раньше здесь было замещение выходом только последнего шага - и ключ, который шаг N
+        // выдал, а шаг N+1 не переиздал, пропадал для шага N+2 (docscan: step_ocr выдает json,
+        // step_ocr_visualize его не переиздавал - step_llm_prompt получал json=null), что
+        // противоречило задокументированной merge-семантике outputToNext.
+        Map<String, Object> carried = new LinkedHashMap<>();
 
         for (int i = startStepIndex; i < steps.size(); i++) {
             StepDefinition step = steps.get(i);
             Processor processor = processorRegistry.resolve(step.getProcessorRef());
-            ExecutionContext stepContext = stepInput.isEmpty() ? context : context.withMergedState(stepInput);
+            ExecutionContext stepContext = carried.isEmpty() ? context : context.withMergedState(carried);
 
             tracer.stepStarted(nodeId, definition, step, i, steps.size(), stepContext);
             long startedAt = System.currentTimeMillis();
@@ -87,7 +92,7 @@ public final class Edge {
             tracer.stepSucceeded(nodeId, definition, step, i, stepContext, stepOutput, startedAt, elapsedMs(startNanos));
 
             pipelineOutput.putAll(stepOutput);
-            stepInput = projectForward(stepOutput, step.getOutputToNext());
+            carried.putAll(projectForward(stepOutput, step.getOutputToNext()));
             savedOutputs.putAll(projectForSave(stepOutput, step.getOutputToSave()));
         }
 

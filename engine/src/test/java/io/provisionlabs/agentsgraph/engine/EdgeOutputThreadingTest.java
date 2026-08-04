@@ -51,6 +51,34 @@ class EdgeOutputThreadingTest {
     }
 
     @Test
+    void earlierStepsOutputSurvivesIntermediateStepsThatDoNotReEmitIt() {
+        // Форма docscan-бага: step_ocr выдает json, step_ocr_visualize json НЕ переиздает,
+        // step_llm_prompt должен все равно его видеть - вклад каждого шага НАКАПЛИВАЕТСЯ
+        // (через его output_to_next фильтр), а не замещается выходом последнего шага.
+        ProcessorRegistry registry = new ProcessorRegistry();
+
+        registry.register("ocr", (context, step) -> Map.of("json", "{\"doc\":1}"));
+        registry.register("visualize", (context, step) -> Map.of("tables", List.of("t1")));
+        registry.register("prompt", (context, step) -> {
+            Map<String, Object> out = new HashMap<>();
+            out.put("sawJson", context.getAccumulatedState().get("json"));
+            out.put("sawTables", context.getAccumulatedState().get("tables"));
+            return out;
+        });
+
+        EdgeDefinition edge = EdgeDefinition.builder("edge_pipeline")
+                .step(new StepDefinition("s0", "ocr", Map.of(), List.of("json"), List.of()))
+                .step(new StepDefinition("s1", "visualize", Map.of(), List.of("json", "tables"), List.of()))
+                .step(new StepDefinition("s2", "prompt", Map.of(), List.of(), List.of()))
+                .build();
+
+        EdgeResult result = new Edge(edge, registry).execute(ExecutionContext.newFlow(Map.of(), Map.of()));
+
+        assertThat(result.getUpdatedContext().getAccumulatedState().get("sawJson")).isEqualTo("{\"doc\":1}");
+        assertThat(result.getUpdatedContext().getAccumulatedState().get("sawTables")).isEqualTo(List.of("t1"));
+    }
+
+    @Test
     void emptyOutputToNextForwardsTheEntireStepOutput() {
         ProcessorRegistry registry = new ProcessorRegistry();
         registry.register("step0", (context, step) -> Map.of("x", 1, "y", 2));
