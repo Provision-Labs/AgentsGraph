@@ -4,6 +4,7 @@ import io.provisionlabs.agentsgraph.config.ConfigStore;
 import io.provisionlabs.agentsgraph.config.EdgeDefinition;
 import io.provisionlabs.agentsgraph.config.GraphDefinition;
 import io.provisionlabs.agentsgraph.config.NodeDefinition;
+import io.provisionlabs.agentsgraph.config.StepDefinition;
 import io.provisionlabs.agentsgraph.context.ExecutionContext;
 import io.provisionlabs.agentsgraph.trace.ContextJsonCodec;
 import io.provisionlabs.agentsgraph.trace.ExecutionEvent;
@@ -251,15 +252,27 @@ public final class RuntimeOrchestrator {
 
     /**
      * A {@link RecordingStepTracer} (writing into the {@link TraceStore}'s step-level trace)
-     * when the context's metadata carries {@link #DEBUG_METADATA_KEY}; {@link StepTracer#NOOP}
-     * otherwise - the normal path never pays for step tracing.
+     * when the context's metadata carries {@link #DEBUG_METADATA_KEY}. Вне debug-режима: если в
+     * графе есть шаги с {@code "snapshot": true}, пишется селективный трейс ТОЛЬКО этих шагов -
+     * они остаются рестартуемыми ({@code resumeFrom}) в проде (HITL-ветка human-review); прочие
+     * прогоны по-прежнему не платят за step-трейсинг ({@link StepTracer#NOOP}).
      */
     private StepTracer stepTracerFor(GraphDefinition graph, ExecutionContext initialContext) {
-        if (!isDebug(initialContext)) {
-            return StepTracer.NOOP;
+        if (isDebug(initialContext)) {
+            return new RecordingStepTracer(traceStore, contextCodec,
+                    initialContext.getFlowId(), graph.getId(), graph.getVersion());
         }
-        return new RecordingStepTracer(traceStore, contextCodec,
-                initialContext.getFlowId(), graph.getId(), graph.getVersion());
+        if (hasSnapshotSteps(graph)) {
+            return new RecordingStepTracer(traceStore, contextCodec,
+                    initialContext.getFlowId(), graph.getId(), graph.getVersion(), true);
+        }
+        return StepTracer.NOOP;
+    }
+
+    private static boolean hasSnapshotSteps(GraphDefinition graph) {
+        return graph.getEdges().values().stream()
+                .flatMap(edge -> edge.getSteps().stream())
+                .anyMatch(StepDefinition::isSnapshot);
     }
 
     private static boolean isDebug(ExecutionContext context) {

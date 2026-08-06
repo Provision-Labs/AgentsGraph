@@ -321,8 +321,10 @@ public final class AgentsGraphEngine {
      * recorded input snapshot, applies {@code stateOverrides} on top of {@code accumulated_state}
      * (e.g. a corrected value when debugging bad data), and re-executes the graph from exactly
      * that step - earlier steps don't run again. The resumed run is a NEW flow (its metadata
-     * carries {@code parent_flow_id}/{@code resumed_from_seq} for lineage) and runs in debug mode
-     * itself, so it can be resumed again.
+     * carries {@code parent_flow_id}/{@code resumed_from_seq} for lineage) and inherits the
+     * parent's tracing mode: a debug flow resumes in debug (the flag is part of the recorded
+     * metadata), a production flow with {@code "snapshot": true} steps resumes with selective
+     * snapshots - either way the resume point stays restartable again.
      *
      * <p>Everything from the resume point on executes live (delegates/LLMs may answer
      * differently than in the original run); replaying recorded answers is what the
@@ -349,7 +351,10 @@ public final class AgentsGraphEngine {
         Map<String, Object> metadata = new LinkedHashMap<>(decoded.getMetadata());
         metadata.put("parent_flow_id", flowId);
         metadata.put("resumed_from_seq", seq);
-        metadata.put(RuntimeOrchestrator.DEBUG_METADATA_KEY, true);
+        // Режим наследуется от родителя: debug-flow резюмится в debug (флаг уже в снапшоте
+        // метаданных), прод-flow со снапшот-шагами ("snapshot": true - HITL) резюмится без
+        // полного debug - селективная запись помеченных шагов включится сама, так что
+        // human-review остаётся рестартуемым и в резюмированном прогоне.
 
         ExecutionContext context = ExecutionContext.newFlow(decoded.getInputData(), metadata)
                 .withMergedState(decoded.getAccumulatedState());

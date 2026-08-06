@@ -116,7 +116,8 @@ public final class GraphJsonMapper {
         for (GraphJson.StepJson stepJson : json.steps) {
             String stepId = stepJson.id != null ? stepJson.id : "step_" + (index++);
             builder.step(new StepDefinition(
-                    stepId, stepJson.processorId, stepJson.params, stepJson.outputToNext, stepJson.outputToSave));
+                    stepId, stepJson.processorId, stepJson.params, stepJson.outputToNext,
+                    stepJson.outputToSave, stepJson.snapshot));
         }
         for (Map.Entry<String, String> mapping : json.outputMapping.entrySet()) {
             builder.outputMapping(mapping.getKey(), mapping.getValue());
@@ -141,6 +142,7 @@ public final class GraphJsonMapper {
             stepJson.params = new LinkedHashMap<>(step.getParams());
             stepJson.outputToNext = new ArrayList<>(step.getOutputToNext());
             stepJson.outputToSave = new ArrayList<>(step.getOutputToSave());
+            stepJson.snapshot = step.isSnapshot();
             json.steps.add(stepJson);
         }
         return json;

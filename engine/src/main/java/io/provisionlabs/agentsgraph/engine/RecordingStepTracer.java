@@ -18,6 +18,12 @@ import java.util.concurrent.atomic.AtomicLong;
  * input-context snapshot, raw output, timing, and (on failure) the stack trace - appended to the
  * {@link TraceStore}'s step-level trace. One instance per flow; {@code seq} is its monotonic step
  * counter.
+ *
+ * <p>{@link #snapshotFlaggedOnly} - продовый режим: записываются только шаги с
+ * {@code "snapshot": true} в конфиге графа ({@link StepDefinition#isSnapshot()}). Так отдельные
+ * шаги (human-review в HITL-ветке, дорогие внешние вызовы) остаются рестартуемыми через
+ * {@code resumeFrom} без полного debug-трейса. {@code seq} и здесь монотонен по ФАКТИЧЕСКИ
+ * записанным шагам - {@code resumeFrom} адресует записи, а не порядковые номера исполнения.
  */
 public final class RecordingStepTracer implements StepTracer {
 
@@ -26,21 +32,36 @@ public final class RecordingStepTracer implements StepTracer {
     private final String flowId;
     private final String graphId;
     private final String graphVersion;
+    private final boolean snapshotFlaggedOnly;
     private final AtomicLong seq = new AtomicLong();
 
     public RecordingStepTracer(TraceStore store, ContextJsonCodec codec,
                                 String flowId, String graphId, String graphVersion) {
+        this(store, codec, flowId, graphId, graphVersion, false);
+    }
+
+    public RecordingStepTracer(TraceStore store, ContextJsonCodec codec,
+                                String flowId, String graphId, String graphVersion,
+                                boolean snapshotFlaggedOnly) {
         this.store = store;
         this.codec = codec;
         this.flowId = flowId;
         this.graphId = graphId;
         this.graphVersion = graphVersion;
+        this.snapshotFlaggedOnly = snapshotFlaggedOnly;
+    }
+
+    private boolean skip(StepDefinition step) {
+        return snapshotFlaggedOnly && !step.isSnapshot();
     }
 
     @Override
     public void stepSucceeded(String nodeId, EdgeDefinition edge, StepDefinition step, int stepIndex,
                                 ExecutionContext stepInput, Map<String, Object> rawOutput,
                                 long startedAtMillis, long durationMs) {
+        if (skip(step)) {
+            return;
+        }
         StepTraceRecord record = newRecord(nodeId, edge, step, stepIndex, stepInput, startedAtMillis, durationMs);
         ContextJsonCodec.Snapshot output = codec.snapshotMap(rawOutput);
         record.setOutputJson(output.getJson());
@@ -52,6 +73,9 @@ public final class RecordingStepTracer implements StepTracer {
     public void stepFailed(String nodeId, EdgeDefinition edge, StepDefinition step, int stepIndex,
                              ExecutionContext stepInput, Throwable failure,
                              long startedAtMillis, long durationMs) {
+        if (skip(step)) {
+            return;
+        }
         StepTraceRecord record = newRecord(nodeId, edge, step, stepIndex, stepInput, startedAtMillis, durationMs);
         record.setStatus(ExecutionStatus.FAILED);
         StringWriter buffer = new StringWriter();

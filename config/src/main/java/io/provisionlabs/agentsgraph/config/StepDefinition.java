@@ -22,6 +22,7 @@ public final class StepDefinition {
     private final Map<String, Object> params;
     private final List<String> outputToNext;
     private final List<String> outputToSave;
+    private final boolean snapshot;
 
     public StepDefinition(String id, String processorRef, Map<String, Object> params) {
         this(id, processorRef, params, Collections.emptyList(), Collections.emptyList());
@@ -29,11 +30,17 @@ public final class StepDefinition {
 
     public StepDefinition(String id, String processorRef, Map<String, Object> params,
                            List<String> outputToNext, List<String> outputToSave) {
+        this(id, processorRef, params, outputToNext, outputToSave, false);
+    }
+
+    public StepDefinition(String id, String processorRef, Map<String, Object> params,
+                           List<String> outputToNext, List<String> outputToSave, boolean snapshot) {
         this.id = Objects.requireNonNull(id, "id");
         this.processorRef = Objects.requireNonNull(processorRef, "processorRef");
         this.params = params == null ? Collections.emptyMap() : Collections.unmodifiableMap(params);
         this.outputToNext = outputToNext == null ? Collections.emptyList() : Collections.unmodifiableList(outputToNext);
         this.outputToSave = outputToSave == null ? Collections.emptyList() : Collections.unmodifiableList(outputToSave);
+        this.snapshot = snapshot;
     }
 
     public String getId() {
@@ -56,5 +63,15 @@ public final class StepDefinition {
     /** Keys of this step's output collected for persistence via the edge's {@code OutputSink}. */
     public List<String> getOutputToSave() {
         return outputToSave;
+    }
+
+    /**
+     * Записывать входной снапшот этого шага в step-level трейс и ВНЕ debug-режима - чтобы шаг был
+     * рестартуемым в проде ({@code AgentsGraphEngine.resumeFrom}). Так flow, завершившийся веткой
+     * human-review (HITL), можно продолжить с этого шага, когда человек ответил, не гоняя весь
+     * граф в debug. Ключ графа: {@code "snapshot": true}.
+     */
+    public boolean isSnapshot() {
+        return snapshot;
     }
 }

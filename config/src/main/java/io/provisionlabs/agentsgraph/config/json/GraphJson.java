@@ -112,5 +112,8 @@ public class GraphJson {
 
         @JsonProperty("output_to_save")
         public List<String> outputToSave = new ArrayList<>();
+
+        /** См. {@link io.provisionlabs.agentsgraph.config.StepDefinition#isSnapshot()}. */
+        public boolean snapshot;
     }
 }
