@@ -172,10 +172,12 @@ public final class InteractionService {
 
     private HumanTask toTask(String flowId, StepTraceRecord step, Map<String, Object> body) {
         ResponseSchema schema;
-        if (body.get("options") instanceof List<?> options && !options.isEmpty()) {
-            schema = ResponseSchema.ofOptions(options.stream().map(String::valueOf).toList());
-        } else if (body.get("requiredKeys") instanceof List<?> keys && !keys.isEmpty()) {
-            schema = ResponseSchema.ofRequiredKeys(keys.stream().map(String::valueOf).toList());
+        List<String> options = stringList(body.get("options"));
+        List<String> requiredKeys = stringList(body.get("requiredKeys"));
+        if (!options.isEmpty()) {
+            schema = ResponseSchema.ofOptions(options);
+        } else if (!requiredKeys.isEmpty()) {
+            schema = ResponseSchema.ofRequiredKeys(requiredKeys);
         } else {
             schema = ResponseSchema.freeForm();
         }
@@ -223,5 +225,16 @@ public final class InteractionService {
     @SuppressWarnings("unchecked")
     private static Map<String, Object> asMap(Object value) {
         return value instanceof Map ? (Map<String, Object>) value : Map.of();
+    }
+
+    private static List<String> stringList(Object value) {
+        if (!(value instanceof List)) {
+            return List.of();
+        }
+        List<String> result = new ArrayList<>();
+        for (Object item : (List<?>) value) {
+            result.add(String.valueOf(item));
+        }
+        return result;
     }
 }
