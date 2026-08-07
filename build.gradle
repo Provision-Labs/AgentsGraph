@@ -69,6 +69,13 @@ subprojects {
         withSourcesJar()
     }
 
+    // Published jars stay Java 11; TESTS compile at 17 - building already requires JDK 17+
+    // (admin-server is Spring Boot 3), and test sources use text blocks/records.
+    compileTestJava {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
     repositories {
         mavenCentral()
     }
