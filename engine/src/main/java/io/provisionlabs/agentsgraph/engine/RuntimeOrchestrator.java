@@ -252,10 +252,10 @@ public final class RuntimeOrchestrator {
 
     /**
      * A {@link RecordingStepTracer} (writing into the {@link TraceStore}'s step-level trace)
-     * when the context's metadata carries {@link #DEBUG_METADATA_KEY}. Вне debug-режима: если в
-     * графе есть шаги с {@code "snapshot": true}, пишется селективный трейс ТОЛЬКО этих шагов -
-     * они остаются рестартуемыми ({@code resumeFrom}) в проде (HITL-ветка human-review); прочие
-     * прогоны по-прежнему не платят за step-трейсинг ({@link StepTracer#NOOP}).
+     * when the context's metadata carries {@link #DEBUG_METADATA_KEY}. Outside debug mode: if the
+     * graph has steps flagged {@code "snapshot": true}, a selective trace of ONLY those steps is
+     * written - they stay restartable ({@code resumeFrom}) in production (the HITL human-review
+     * branch); every other run still pays nothing for step tracing ({@link StepTracer#NOOP}).
      */
     private StepTracer stepTracerFor(GraphDefinition graph, ExecutionContext initialContext) {
         if (isDebug(initialContext)) {

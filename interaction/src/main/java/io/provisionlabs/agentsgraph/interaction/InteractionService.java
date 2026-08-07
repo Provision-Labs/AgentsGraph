@@ -17,28 +17,31 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Ядро HITL: превращает завершённые review-flow в {@link HumanTask} и ответы людей - в
- * продолжение пайплайна. Работает ПОВЕРХ существующих механизмов движка, ничего в нём не требуя:
+ * The HITL core: turns completed review flows into {@link HumanTask}s and human answers into
+ * pipeline continuations. Works ON TOP of the engine's existing machinery, requiring nothing new
+ * from it:
  * <ul>
- *   <li>задачи - проекция {@code TraceStore}: flow со статусом COMPLETED и тегом
- *       {@link #PENDING_TAG} (его вешает терминальный edge review-ветки, tags_to_add), у которых
- *       ещё нет тега {@link #DONE_TAG}; тело задачи - сохранённый output шага
- *       {@code human-review} из step-трейса (шаг помечен {@code "snapshot": true});</li>
- *   <li>ответ - {@code AgentsGraphEngine.resumeFrom(flowId, seq, {resumeKey: ответ})}: тот же
- *       рестарт шага, что в admin-server; human-review видит ответ и ветка едет в пост-обработку;</li>
- *   <li>идемпотентность - тег {@link #DONE_TAG} на родительском flow: повторный ответ (двойной
- *       клик, второй оператор) отвергается.</li>
+ *   <li>tasks are a {@code TraceStore} projection: flows with status COMPLETED and the
+ *       {@link #PENDING_TAG} tag (added by the review branch's terminal edge via tags_to_add)
+ *       that don't carry {@link #DONE_TAG} yet; the task body is the saved output of the
+ *       {@code human-review} step from the step trace (the step is flagged
+ *       {@code "snapshot": true});</li>
+ *   <li>an answer is {@code AgentsGraphEngine.resumeFrom(flowId, seq, {resumeKey: answer})}: the
+ *       same step restart the admin server uses; human-review sees the answer and the branch
+ *       proceeds to post-processing;</li>
+ *   <li>idempotency is the {@link #DONE_TAG} on the parent flow: a repeated answer (double click,
+ *       second operator) is rejected.</li>
  * </ul>
  */
 public final class InteractionService {
 
-    /** Вешается терминальным edge'м review-ветки (tags_to_add) - "flow ждёт человека". */
+    /** Added by the review branch's terminal edge (tags_to_add) - "this flow awaits a human". */
     public static final String PENDING_TAG = "review_pending";
-    /** Вешается этим сервисом при ответе/истечении - задача закрыта. */
+    /** Added by this service on answer/expiry - the task is closed. */
     public static final String DONE_TAG = "review_done";
-    /** Вешается после доставки задачи адаптерам - повторный publish не делается. */
+    /** Added after the task was handed to adapters - publish is not repeated. */
     public static final String PUBLISHED_TAG = "review_published";
-    /** Дополнительно к {@link #DONE_TAG} при истечении дедлайна. */
+    /** Added on top of {@link #DONE_TAG} when the deadline passed. */
     public static final String EXPIRED_TAG = "review_expired";
 
     private static final Logger log = LoggerFactory.getLogger(InteractionService.class);
@@ -54,7 +57,7 @@ public final class InteractionService {
         this.adapters = adapters == null ? List.of() : List.copyOf(adapters);
     }
 
-    /** Открытые задачи (инбокс оператора): review_pending без review_done. */
+    /** Open tasks (the operator inbox): review_pending without review_done. */
     public List<HumanTask> pending() {
         List<HumanTask> tasks = new ArrayList<>();
         for (TraceRecord record : traceStore.query(Set.of(PENDING_TAG), ExecutionStatus.COMPLETED, null)) {
@@ -66,7 +69,7 @@ public final class InteractionService {
         return tasks;
     }
 
-    /** Задача по id ({@code flowId:seq}), если она ещё открыта. */
+    /** The task with the given id ({@code flowId:seq}), while it is still open. */
     public Optional<HumanTask> pendingTask(String taskId) {
         String flowId = flowIdOf(taskId);
         TraceRecord record = traceStore.find(flowId).orElse(null);
@@ -77,8 +80,8 @@ public final class InteractionService {
     }
 
     /**
-     * Доставить новые задачи адаптерам. Идемпотентен (тег {@link #PUBLISHED_TAG}) - зовите после
-     * каждого прогона графа или периодически. Возвращает число доставленных задач.
+     * Deliver new tasks to the adapters. Idempotent (the {@link #PUBLISHED_TAG} tag) - call it
+     * after each graph run or periodically. Returns the number of tasks delivered.
      */
     public int publishNew() {
         int published = 0;
@@ -106,11 +109,11 @@ public final class InteractionService {
     }
 
     /**
-     * Ответ человека из любого канала: валидация по схеме, защита от повторного ответа, затем
-     * продолжение пайплайна через {@code resumeFrom}. Возвращает контекст резюмированного flow.
+     * A human's answer from any channel: schema validation, double-answer protection, then the
+     * pipeline continuation via {@code resumeFrom}. Returns the resumed flow's context.
      *
-     * @throws IllegalStateException    задача уже закрыта (двойной клик / второй оператор)
-     * @throws IllegalArgumentException неизвестная задача или ответ не проходит схему
+     * @throws IllegalStateException    the task is already closed (double click / second operator)
+     * @throws IllegalArgumentException unknown task, or the answer fails the schema
      */
     public ExecutionContext complete(String taskId, HumanTaskDecision decision) {
         HumanTask task = pendingTask(taskId).orElseThrow(() -> {
@@ -121,8 +124,9 @@ public final class InteractionService {
         });
         task.getSchema().validate(decision.getValues());
 
-        // Тег ставится ДО резюма: упавший resumeFrom лучше разбирать вручную (задача видна по
-        // review_done без дочернего flow), чем допустить два параллельных резюма одного ответа.
+        // The tag goes on BEFORE the resume: a failed resumeFrom is better handled manually (the
+        // task is findable as review_done without a child flow) than allowing two parallel
+        // resumes of the same answer.
         traceStore.addTags(task.getFlowId(), Set.of(DONE_TAG));
         log.info("Task {} completed by {}", taskId, decision.getAuthor());
 
@@ -132,7 +136,7 @@ public final class InteractionService {
         return resumed;
     }
 
-    /** Закрывает просроченные задачи (дедлайн из {@code timeoutSeconds} шага). Зовётся планировщиком. */
+    /** Closes overdue tasks (deadline from the step's {@code timeoutSeconds}). Call from a scheduler. */
     public int expireOverdue() {
         long now = System.currentTimeMillis();
         int expired = 0;
@@ -148,9 +152,9 @@ public final class InteractionService {
         return expired;
     }
 
-    // -- Проекция задачи из трейса ----------------------------------------------------------------
+    // -- Task projection over the trace -----------------------------------------------------------
 
-    /** Последняя запись шага с {@code humanTask} в output - тело задачи + координаты резюма. */
+    /** The latest step record with {@code humanTask} in its output - task body + resume coordinates. */
     private Optional<HumanTask> taskOf(String flowId) {
         List<StepTraceRecord> steps = engine.getStepTraces(flowId);
         for (int i = steps.size() - 1; i >= 0; i--) {

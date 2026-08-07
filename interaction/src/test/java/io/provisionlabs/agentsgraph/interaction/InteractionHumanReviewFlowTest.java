@@ -20,18 +20,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Полный HITL-цикл на ромбе "точность OCR": плохая точность уводит flow в review-ветку, flow
- * ШТАТНО завершается с тегом review_pending (движок ничего не знает о "паузах"), задача видна в
- * {@link InteractionService#pending()}, ответ человека продолжает пайплайн через существующий
- * {@code resumeFrom} - пост-обработка получает скорректированные данные и НЕ отличает их от
- * идеально распознанных.
+ * The full HITL cycle on the "OCR accuracy" diamond: low accuracy takes the flow into the review
+ * branch, the flow completes NORMALLY with the review_pending tag (the engine knows nothing about
+ * "pauses"), the task shows up in {@link InteractionService#pending()}, and the human's answer
+ * continues the pipeline through the existing {@code resumeFrom} - post-processing receives the
+ * corrected data and cannot tell it apart from a perfect recognition.
  *
  * <pre>
  * node_ocr: edge_ocr = [ocr, accuracy-check] -> node_decision
  *    +- accuracyOk==false -> edge_hitl = [human-review(snapshot), apply-corrections] -> node_after_review
- *    |       +- reviewPending==true -> edge_pending(noop, tag review_pending) -> конец
+ *    |       +- reviewPending==true -> edge_pending(noop, tag review_pending) -> end
  *    |       +- default             -> edge_llm
- *    +- default -> edge_llm = [llm] -> конец
+ *    +- default -> edge_llm = [llm] -> end
  * </pre>
  */
 class InteractionHumanReviewFlowTest {
@@ -42,7 +42,7 @@ class InteractionHumanReviewFlowTest {
     private final List<HumanTask> publishedTasks = new ArrayList<>();
     private final List<HumanTask> closedTasks = new ArrayList<>();
 
-    /** Точность приходит из входных данных теста - "OCR" здесь имитация. */
+    /** Accuracy comes from the test's input data - the "OCR" here is a stand-in. */
     @BeforeEach
     void setUp() {
         engine = AgentsGraphEngine.inMemory();
@@ -60,7 +60,7 @@ class InteractionHumanReviewFlowTest {
         engine.registerProcessor("apply-corrections", (context, step) -> {
             Object review = context.getAccumulatedState().get("humanReview");
             if (!(review instanceof Map)) {
-                return Map.of(); // pending-прогон: корректировать нечего
+                return Map.of(); // pending run: nothing to correct
             }
             Object corrected = ((Map<?, ?>) review).get("fields");
             return corrected == null ? Map.of() : Map.of("fields", corrected);
@@ -95,7 +95,7 @@ class InteractionHumanReviewFlowTest {
                                 "showKeys", "fields,accuracyScore",
                                 "requiredKeys", "fields",
                                 "timeoutSeconds", "3600"),
-                        List.of(), List.of(), true)) // snapshot: рестартуем в проде без debug
+                        List.of(), List.of(), true)) // snapshot: restartable in production, no debug needed
                 .step(new StepDefinition("s_apply", "apply-corrections", Map.of()))
                 .nextNodeId("node_after_review")
                 .build();
@@ -138,18 +138,18 @@ class InteractionHumanReviewFlowTest {
 
         assertThat(result.getAccumulatedState().get("summary")).asString().contains("ЦБ-641");
         assertThat(interaction.pending()).isEmpty();
-        // прод-прогон без review: селективный трейс пишет только snapshot-шаги, а их не было
+        // production run without review: the selective tracer records only snapshot steps, and none ran
         assertThat(engine.getStepTraces(result.getFlowId())).isEmpty();
     }
 
     @Test
     void lowAccuracyEndsTheFlowAsReviewPendingAndTheAnswerContinuesThePipeline() {
-        // 1. Плохая точность: flow завершился ШТАТНО, но без summary - ушёл в review.
+        // 1. Low accuracy: the flow completed NORMALLY, but without a summary - it went to review.
         ExecutionContext pending = engine.execute("doc-flow",
                 ExecutionContext.newFlow(Map.of("prob", 0.42), Map.of()));
         assertThat(pending.getAccumulatedState()).doesNotContainKey("summary");
 
-        // 2. Задача видна и доставляется адаптеру ровно один раз.
+        // 2. The task is visible and delivered to the adapter exactly once.
         assertThat(interaction.publishNew()).isEqualTo(1);
         assertThat(interaction.publishNew()).isZero();
         assertThat(publishedTasks).hasSize(1);
@@ -158,13 +158,13 @@ class InteractionHumanReviewFlowTest {
         assertThat(task.getPayload()).containsKey("fields").containsKey("accuracyScore");
         assertThat(task.getDeadlineEpochMillis()).isNotNull();
 
-        // 3. Снапшот только review-шага (прод, не debug) - этого достаточно для резюма.
+        // 3. Only the review step was snapshotted (production, not debug) - enough to resume.
         List<StepTraceRecord> traces = engine.getStepTraces(pending.getFlowId());
         assertThat(traces).hasSize(1);
         assertThat(traces.get(0).getStepId()).isEqualTo("s_review");
         assertThat(traces.get(0).isRestartable()).isTrue();
 
-        // 4. Человек прислал исправленные поля - пайплайн доехал до LLM на НИХ, OCR не перезапускался.
+        // 4. The human sent corrected fields - the pipeline reached the LLM on THEM, OCR did not rerun.
         int ocrCallsBefore = ocrCalls.get();
         ExecutionContext resumed = interaction.complete(task.getTaskId(),
                 new HumanTaskDecision(Map.of("fields", Map.of("doc_number", "ЦБ-999")), "operator"));
@@ -173,7 +173,7 @@ class InteractionHumanReviewFlowTest {
         assertThat(ocrCalls.get()).isEqualTo(ocrCallsBefore);
         assertThat(resumed.getMetadata()).containsEntry("parent_flow_id", pending.getFlowId());
 
-        // 5. Задача закрыта: инбокс пуст, адаптер уведомлён, повторный ответ отвергается.
+        // 5. The task is closed: empty inbox, adapter notified, repeated answers rejected.
         assertThat(interaction.pending()).isEmpty();
         assertThat(closedTasks).hasSize(1);
         assertThatThrownBy(() -> interaction.complete(task.getTaskId(),
@@ -191,7 +191,7 @@ class InteractionHumanReviewFlowTest {
                 new HumanTaskDecision(Map.of("something", "else"), "operator")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("fields");
-        // невалидный ответ НЕ закрыл задачу
+        // the invalid answer did NOT close the task
         assertThat(interaction.pending()).hasSize(1);
     }
 
@@ -199,10 +199,9 @@ class InteractionHumanReviewFlowTest {
     void overdueTasksAreExpiredNotResumed() {
         engine.execute("doc-flow", ExecutionContext.newFlow(Map.of("prob", 0.1), Map.of()));
         HumanTask task = interaction.pending().get(0);
-        assertThat(interaction.expireOverdue()).isZero(); // дедлайн через час - ещё не истёк
+        assertThat(interaction.expireOverdue()).isZero(); // deadline is an hour away - not yet due
 
-        // подменить дедлайн нельзя - истечение проверяем на задаче без таймаута отдельным графом;
-        // здесь достаточно инварианта "не истёкшее не трогаем"
+        // the invariant under test here: tasks that are not overdue are left untouched
         assertThat(interaction.pendingTask(task.getTaskId())).isPresent();
     }
 }

@@ -5,16 +5,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Что считается валидным ответом человека - проверяется в {@link InteractionService#complete}
- * ОДИН раз для всех каналов доставки, адаптеры шлют сырой ответ.
+ * What counts as a valid human answer - checked ONCE in {@link InteractionService#complete} for
+ * every delivery channel; adapters submit raw answers.
  *
- * <p>Две формы (взаимоисключающие):
+ * <p>Two mutually exclusive forms:
  * <ul>
- *   <li>{@code options} - выбор одного варианта: ответ обязан содержать
- *       {@code {"option": "<один из options>"}} (кнопки approve/reject);</li>
- *   <li>{@code requiredKeys} - форма: ответ обязан содержать все перечисленные ключи
- *       (правка полей документа);</li>
- *   <li>обе пустые - свободная форма, любой непустой ответ.</li>
+ *   <li>{@code options} - pick one: the answer must contain
+ *       {@code {"option": "<one of options>"}} (approve/reject buttons);</li>
+ *   <li>{@code requiredKeys} - a form: the answer must contain every listed key
+ *       (corrected document fields);</li>
+ *   <li>both empty - free form, any non-empty answer.</li>
  * </ul>
  */
 public final class ResponseSchema {
@@ -49,7 +49,7 @@ public final class ResponseSchema {
         return requiredKeys;
     }
 
-    /** @throws IllegalArgumentException если ответ не проходит схему */
+    /** @throws IllegalArgumentException when the answer does not pass this schema */
     public void validate(Map<String, Object> answer) {
         if (answer == null || answer.isEmpty()) {
             throw new IllegalArgumentException("Empty answer");

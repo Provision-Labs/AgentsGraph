@@ -5,10 +5,11 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Задача для человека, построенная из ЗАВЕРШЁННОГО flow, ушедшего в review-ветку: сохранённый
- * output шага {@code human-review} (см. {@link HumanReviewProcessor}) плюс координаты для
- * продолжения ({@code AgentsGraphEngine.resumeFrom(flowId, seq, ...)}). Движок про задачи ничего
- * не знает - это проекция interaction-модуля поверх {@code TraceStore}.
+ * A task for a human, built from a COMPLETED flow that went down the review branch: the saved
+ * output of the {@code human-review} step (see {@link HumanReviewProcessor}) plus the coordinates
+ * needed to continue the pipeline ({@code AgentsGraphEngine.resumeFrom(flowId, seq, ...)}). The
+ * engine knows nothing about tasks - this is the interaction module's projection over the
+ * {@code TraceStore}.
  */
 public final class HumanTask {
 
@@ -36,7 +37,7 @@ public final class HumanTask {
         this.deadlineEpochMillis = deadlineEpochMillis;
     }
 
-    /** Естественный ключ задачи - он же ключ идемпотентности ответа. */
+    /** Natural task key - doubles as the idempotency key for answers. */
     public String getTaskId() {
         return flowId + ":" + seq;
     }
@@ -45,7 +46,7 @@ public final class HumanTask {
         return flowId;
     }
 
-    /** Seq записи шага {@code human-review} в step-трейсе - точка {@code resumeFrom}. */
+    /** Seq of the {@code human-review} step's record in the step trace - the {@code resumeFrom} point. */
     public long getSeq() {
         return seq;
     }
@@ -62,7 +63,7 @@ public final class HumanTask {
         return question;
     }
 
-    /** Что показать человеку (поля документа, accuracyScore, fileId, ...). */
+    /** What to show the human (document fields, accuracyScore, fileId, ...). */
     public Map<String, Object> getPayload() {
         return payload;
     }
@@ -71,12 +72,12 @@ public final class HumanTask {
         return schema;
     }
 
-    /** Ключ accumulated state, под которым ответ человека уедет в резюмированный flow. */
+    /** The accumulated-state key under which the human's answer enters the resumed flow. */
     public String getResumeKey() {
         return resumeKey;
     }
 
-    /** Дедлайн ответа (epoch millis) или {@code null}, если не ограничен. */
+    /** Answer deadline (epoch millis), or {@code null} when unlimited. */
     public Long getDeadlineEpochMillis() {
         return deadlineEpochMillis;
     }

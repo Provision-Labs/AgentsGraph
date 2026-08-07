@@ -4,7 +4,7 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 
-/** Ответ человека на {@link HumanTask} - из любого канала (чат, админка, ...). */
+/** A human's answer to a {@link HumanTask} - from any channel (chat, admin inbox, ...). */
 public final class HumanTaskDecision {
 
     private final Map<String, Object> values;
@@ -15,12 +15,12 @@ public final class HumanTaskDecision {
         this.author = author;
     }
 
-    /** Кнопочный ответ: {@code {"option": "approve"}}. */
+    /** A button answer: {@code {"option": "approve"}}. */
     public static HumanTaskDecision option(String option, String author) {
         return new HumanTaskDecision(Map.of(ResponseSchema.OPTION_KEY, option), author);
     }
 
-    /** Значения ответа - целиком лягут в state под {@link HumanTask#getResumeKey()}. */
+    /** The answer values - stored wholesale in state under {@link HumanTask#getResumeKey()}. */
     public Map<String, Object> getValues() {
         return values;
     }

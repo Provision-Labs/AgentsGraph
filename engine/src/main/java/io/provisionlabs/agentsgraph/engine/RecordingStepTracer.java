@@ -19,11 +19,11 @@ import java.util.concurrent.atomic.AtomicLong;
  * {@link TraceStore}'s step-level trace. One instance per flow; {@code seq} is its monotonic step
  * counter.
  *
- * <p>{@link #snapshotFlaggedOnly} - продовый режим: записываются только шаги с
- * {@code "snapshot": true} в конфиге графа ({@link StepDefinition#isSnapshot()}). Так отдельные
- * шаги (human-review в HITL-ветке, дорогие внешние вызовы) остаются рестартуемыми через
- * {@code resumeFrom} без полного debug-трейса. {@code seq} и здесь монотонен по ФАКТИЧЕСКИ
- * записанным шагам - {@code resumeFrom} адресует записи, а не порядковые номера исполнения.
+ * <p>{@link #snapshotFlaggedOnly} is the production mode: only steps flagged
+ * {@code "snapshot": true} in the graph config ({@link StepDefinition#isSnapshot()}) are recorded.
+ * That keeps selected steps (human-review in a HITL branch, expensive external calls) restartable
+ * via {@code resumeFrom} without paying for a full debug trace. {@code seq} stays monotonic over
+ * the steps ACTUALLY recorded - {@code resumeFrom} addresses records, not execution ordinals.
  */
 public final class RecordingStepTracer implements StepTracer {
 

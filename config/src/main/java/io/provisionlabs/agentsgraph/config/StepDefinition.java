@@ -66,10 +66,11 @@ public final class StepDefinition {
     }
 
     /**
-     * Записывать входной снапшот этого шага в step-level трейс и ВНЕ debug-режима - чтобы шаг был
-     * рестартуемым в проде ({@code AgentsGraphEngine.resumeFrom}). Так flow, завершившийся веткой
-     * human-review (HITL), можно продолжить с этого шага, когда человек ответил, не гоняя весь
-     * граф в debug. Ключ графа: {@code "snapshot": true}.
+     * Record this step's input snapshot into the step-level trace even OUTSIDE debug mode, so the
+     * step stays restartable in production ({@code AgentsGraphEngine.resumeFrom}). This is how a
+     * flow that finished through a human-review branch (HITL) can be continued from this exact
+     * step once the human answers - without running the whole graph in debug. Graph JSON key:
+     * {@code "snapshot": true}.
      */
     public boolean isSnapshot() {
         return snapshot;

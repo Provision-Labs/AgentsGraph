@@ -351,10 +351,10 @@ public final class AgentsGraphEngine {
         Map<String, Object> metadata = new LinkedHashMap<>(decoded.getMetadata());
         metadata.put("parent_flow_id", flowId);
         metadata.put("resumed_from_seq", seq);
-        // Режим наследуется от родителя: debug-flow резюмится в debug (флаг уже в снапшоте
-        // метаданных), прод-flow со снапшот-шагами ("snapshot": true - HITL) резюмится без
-        // полного debug - селективная запись помеченных шагов включится сама, так что
-        // human-review остаётся рестартуемым и в резюмированном прогоне.
+        // The tracing mode is inherited from the parent: a debug flow resumes in debug (the flag
+        // is already in the recorded metadata snapshot), a production flow with snapshot-flagged
+        // steps ("snapshot": true - HITL) resumes without full debug - selective recording of the
+        // flagged steps kicks in by itself, so human-review stays restartable in the resumed run.
 
         ExecutionContext context = ExecutionContext.newFlow(decoded.getInputData(), metadata)
                 .withMergedState(decoded.getAccumulatedState());

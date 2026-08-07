@@ -1,20 +1,21 @@
 package io.provisionlabs.agentsgraph.interaction;
 
 /**
- * SPI канала доставки задач человеку: чат, инбокс админки, почта - что угодно. Обратный путь у
- * всех каналов один: {@link InteractionService#complete(String, HumanTaskDecision)}.
+ * SPI for a delivery channel that puts tasks in front of humans: a chat, an admin inbox, email -
+ * anything. The way back is the same for every channel:
+ * {@link InteractionService#complete(String, HumanTaskDecision)}.
  */
 public interface HumanTaskAdapter {
 
-    /** Доставляет ли этот канал такую задачу (по графу/reason/payload). */
+    /** Whether this channel delivers this particular task (by graph/reason/payload). */
     boolean supports(HumanTask task);
 
-    /** Доставить вопрос человеку. Вызывается не более одного раза на задачу. */
+    /** Deliver the question to a human. Called at most once per task. */
     void publish(HumanTask task);
 
     /**
-     * Задача закрыта: ответили (возможно, из другого канала), истёк дедлайн или отменили -
-     * канал может убрать её из своего UI. Опционально.
+     * The task was closed: answered (possibly through another channel), expired, or cancelled -
+     * the channel may remove it from its UI. Optional.
      */
     default void closed(HumanTask task, TaskOutcome outcome) {
     }

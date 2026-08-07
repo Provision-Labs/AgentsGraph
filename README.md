@@ -58,6 +58,7 @@ architecture above. Each layer lives in its own module so it can be depended on 
 | `engine` | Runtime Orchestrator | The Node → Edge execution engine (`RuntimeOrchestrator`, `Node`, `Edge`, `ConditionEngine`, `ProcessorRegistry`, `ProcessorLoader`, `RoutingDelegateRegistry`, `OutputSink`) mapping the Observe → Plan → Act → Reflect loop onto graph evaluation, with sync and async execution. | `config`, `context`, `trace` |
 | `control` | Control Plane & Analytics | Query/replay API (`ControlPlane`) built on top of the trace store, backing `GET /executions` and replay/debug use cases, plus `GraphClassifier`/`TemplateGraphClassifier` for picking which graph should handle a given input. | `trace`, `context`, `config` |
 | `core` | Facade | `AgentsGraphEngine` — a single entry point that deploys graphs, loads/reloads processors from the DB, runs flows (sync/async) and classifies inputs across all five layers. Constructed from `ConfigStore`/`ProcessorDefinitionStore`/`TraceStore` *implementations* — it never touches a `DataSource` or any other storage detail itself; each JDBC store ensures its own schema on construction. | all of the above |
+| `interaction` | Human-in-the-Loop | `InteractionService`, `HumanTask`/`ResponseSchema`/`HumanTaskDecision`, the `HumanTaskAdapter` delivery SPI and the `human-review`/`noop` processors — turns completed review-branch flows into tasks for humans and human answers into pipeline continuations via `resumeFrom`. The engine itself knows nothing about humans; see [Human-in-the-Loop](#-human-in-the-loop-hitl). | `core` |
 | `test` | Test kit | `AgentsGraphTestHarness`, `MockProcessor` and `SqlScriptRunner` — run a real graph (deployed by the same SQL script production uses) with selected processors replaced by scripted mocks, so tests exercise routing/threading/fallback/tracing with zero network calls and zero AI-API token spend. | `core` |
 | `admin-server` | Admin API server | One module, three hats: the REST backend of the [AgentsGraph UI](https://github.com/Provision-Labs/agentsgraph-ui) (`AgentsGraphAdminService`/`AgentsGraphAdminController` - graphs, processors, execution traces, debug step traces with parsed in/out, resume-from-step), Spring Boot auto-configuration (add the jar to any Boot 3 app with a `DataSource` - every bean is `@ConditionalOnMissingBean`), and a runnable server (`./gradlew :admin-server:bootRun`). Java 17 / Spring Boot 3. | `core` |
 
@@ -335,15 +336,19 @@ ExecutionContext resumed = engine.resumeFrom(flowId, failedStep.getSeq());
 engine.resumeFrom(flowId, seq, Map.of("json", correctedOcrJson));
 ```
 
-The resumed run is a NEW flow (metadata carries `parent_flow_id`/`resumed_from_seq` for lineage),
-runs in debug mode itself (so it can be resumed again), and executes everything from the resume
-point **live** - replaying recorded answers instead is what the `agentsgraph-test` mock harness
-is for (`harness.executeDebug` / `harness.stepTraces` / `harness.resumeFrom` wrap the same API).
+The resumed run is a NEW flow (metadata carries `parent_flow_id`/`resumed_from_seq` for lineage)
+and inherits the parent's tracing mode - a debug flow resumes in debug (so it can be resumed
+again), a production flow with `"snapshot": true` steps resumes with selective snapshots. It
+executes everything from the resume point **live** - replaying recorded answers instead is what
+the `agentsgraph-test` mock harness is for (`harness.executeDebug` / `harness.stepTraces` /
+`harness.resumeFrom` wrap the same API).
 
 What to know before relying on it:
 
 - **Zero overhead when off**: a non-debug run never touches the step-trace store - the tracer is
-  a no-op singleton.
+  a no-op singleton. The one exception is opt-in: steps flagged `"snapshot": true` in the graph
+  are recorded even outside debug mode (and only they are), keeping them restartable in
+  production - see [Human-in-the-Loop](#-human-in-the-loop-hitl).
 - **Serialization is defensive, per value** (`ContextJsonCodec`): `byte[]` round-trips via base64;
   a value Jackson can't serialize becomes an `__unserializable__` placeholder; a value over the
   size limit (1 MB by default) becomes `__truncated__`. Either marker flags the record
@@ -381,6 +386,83 @@ it was.
 harness.mocksFromDump(dumpJson, "docscan-ocr", "llm-completion"); // only the external steps
 ExecutionContext replayed = harness.execute("ocr-accounting", originalInput);
 ```
+
+## 🧑‍⚖️ Human-in-the-Loop (HITL)
+
+The `interaction` module lets a graph hand part of the work to a human — reviewing a poorly
+recognized document, approving a decision — **without teaching the engine anything about humans**.
+There is no "suspended" state and no special edge type: the flow simply forks, and waiting for a
+human is an ordinary *completed* flow that gets continued later through the existing
+`resumeFrom` step restart.
+
+### The pattern: a review diamond
+
+```
+node_ocr: edge_ocr = [ocr, accuracy-check] ──► node_decision
+   ├─ accuracyOk==false ──► edge_hitl = [human-review (snapshot), apply-corrections] ──► node_after_review
+   │        ├─ reviewPending==true ──► edge_pending (noop, tags_to_add: [review_pending]) ──► end
+   │        └─ default             ──► edge_llm
+   └─ default ──► edge_llm = [llm-prompt, llm-completion, ...] ──► end
+```
+
+- **`accuracy-check`** (application-defined) scores the recognition and outputs `accuracyOk`;
+  plain `RULES` routing decides whether a human is needed.
+- **`human-review`** (shipped in `interaction`) is a pure processor with two modes decided by
+  data: when the human's answer (`resumeKey`, default `humanReview`) is *absent* from state it
+  emits a `humanTask` payload + `reviewPending=true` and routing ends the flow through a terminal
+  edge tagged `review_pending`; when the answer is *present* (the flow re-entered here via
+  `resumeFrom` overrides) it passes the answer through and the branch continues.
+  Step params: `question`, `showKeys` (context keys copied into the task payload), `options`
+  (button answers) or `requiredKeys` (form answers), `timeoutSeconds`, `resumeKey`.
+- **`apply-corrections`** (application-defined) writes the human's corrections back **under the
+  same context keys the OCR edge produces**, so post-processing cannot tell corrected data from
+  perfectly recognized data and needs no changes at all.
+- **`noop`** (shipped in `interaction`) is for edges whose only job is routing/tags.
+
+The `human-review` step must be flagged in the graph JSON:
+
+```json
+{"id": "s_review", "processor_id": "human-review", "snapshot": true,
+ "params": {"question": "Please verify the document", "showKeys": "fields,accuracyScore",
+            "requiredKeys": "fields", "timeoutSeconds": "86400"}}
+```
+
+`"snapshot": true` records that step's full input snapshot into the step trace **outside debug
+mode** (a selective `RecordingStepTracer`): only flagged steps are recorded, every other
+production run still pays nothing for step tracing — and the review step stays restartable.
+
+### Tasks and answers: `InteractionService`
+
+Tasks are not stored anywhere new — they are a projection over the `TraceStore`: flows with
+status `COMPLETED` and tag `review_pending` that don't yet carry `review_done`. The task body is
+the recorded output of the `human-review` step; the record's `flowId`+`seq` are exactly the
+`resumeFrom` coordinates.
+
+```java
+InteractionService interaction = new InteractionService(engine, List.of(chatAdapter, adminAdapter));
+
+interaction.publishNew();                       // deliver new tasks to adapters (idempotent: review_published)
+List<HumanTask> inbox = interaction.pending();  // the operator inbox
+
+// the human answered - from ANY channel:
+interaction.complete(task.getTaskId(),          // taskId = flowId:seq
+        new HumanTaskDecision(Map.of("fields", correctedFields), "operator"));
+// -> schema validation -> double-answer protection (review_done tag) ->
+// -> engine.resumeFrom(flowId, seq, {humanReview: answer}) -> the pipeline continues
+
+interaction.expireOverdue();                    // deadline sweep - call from a scheduler
+```
+
+`HumanTaskAdapter` is the delivery SPI (`supports`/`publish`/`closed`) — implement it once per
+channel: a chat bot that renders the payload as editable fields with approve buttons, an admin
+inbox in the UI, an e-mail notifier. The answer path is the same `complete(...)` call for all of
+them; `ResponseSchema` (options or required keys) is validated centrally, a second answer to the
+same task is rejected, and every channel gets `closed(...)` when the task is finished anywhere.
+
+Because the continuation is plain `resumeFrom`, everything from the [debug section](#-debug-mode-step-level-tracing--resume)
+applies: the resumed run is a new flow with `parent_flow_id` lineage, upstream steps (the
+expensive OCR call) never rerun, and the answer lands in `accumulated_state` under `resumeKey`
+like any other override.
 
 ## 🖥️ Building & Running the Admin API Server
 

@@ -11,32 +11,34 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Шаг HITL-ветки. Чистый процессор без знания о "паузах" - два режима по данным контекста:
+ * The HITL branch step. A pure processor with no notion of "pausing" - two modes decided by the
+ * context data:
  * <ul>
- *   <li>ответа человека ({@code resumeKey}) в state НЕТ - первый прогон: собирает payload задачи
- *       из контекста и возвращает {@code humanTask} + {@code reviewPending=true}; роутинг ноды
- *       уводит flow в терминальную ветку (edge с {@code tags_to_add: ["review_pending"]}), flow
- *       ШТАТНО завершается, задача видна {@link InteractionService#pending()};</li>
- *   <li>ответ ЕСТЬ (мы пришли сюда {@code resumeFrom} с overrides) - пропускает его дальше:
- *       {@code {resumeKey: ответ, reviewPending: false}}, edge доезжает до apply-corrections и
- *       роутинг ведёт в пост-обработку.</li>
+ *   <li>the human's answer ({@code resumeKey}) is NOT in state - first run: builds the task
+ *       payload from the context and returns {@code humanTask} + {@code reviewPending=true};
+ *       node routing takes the flow to the terminal branch (an edge with
+ *       {@code tags_to_add: ["review_pending"]}), the flow completes NORMALLY, and the task shows
+ *       up in {@link InteractionService#pending()};</li>
+ *   <li>the answer IS present (we arrived here via {@code resumeFrom} with overrides) - passes it
+ *       through: {@code {resumeKey: answer, reviewPending: false}}; the edge continues to
+ *       apply-corrections and routing proceeds to post-processing.</li>
  * </ul>
  *
- * <p>Шаг ОБЯЗАН быть помечен {@code "snapshot": true} в графе - иначе в проде не будет записи
- * для {@code resumeFrom}.
+ * <p>The step MUST be flagged {@code "snapshot": true} in the graph - otherwise production runs
+ * leave no record for {@code resumeFrom}.
  *
- * <p>Параметры процессора/шага: {@code question}; {@code showKeys} - какие ключи контекста
- * скопировать в payload (csv или список); {@code options} - варианты кнопочного ответа (csv);
- * {@code requiredKeys} - обязательные ключи ответа-формы; {@code resumeKey} (default
- * {@code humanReview}); {@code timeoutSeconds} - дедлайн ответа.
+ * <p>Processor/step params: {@code question}; {@code showKeys} - context keys copied into the
+ * payload (csv or list); {@code options} - button answer variants (csv); {@code requiredKeys} -
+ * required keys of a form answer; {@code resumeKey} (default {@code humanReview});
+ * {@code timeoutSeconds} - answer deadline.
  */
 public final class HumanReviewProcessor implements Processor {
 
     public static final String DEFAULT_RESUME_KEY = "humanReview";
 
-    /** Ключ output с телом задачи - его читает {@link InteractionService} из step-трейса. */
+    /** Output key holding the task body - read by {@link InteractionService} from the step trace. */
     public static final String TASK_OUTPUT_KEY = "humanTask";
-    /** Ключ output для роутинга ноды: true = ждём человека, false = ответ получен. */
+    /** Output key for node routing: true = waiting for a human, false = answer received. */
     public static final String PENDING_OUTPUT_KEY = "reviewPending";
 
     private Map<String, Object> params = Map.of();
@@ -71,7 +73,7 @@ public final class HumanReviewProcessor implements Processor {
         }
 
         Map<String, Object> task = new LinkedHashMap<>();
-        task.put("question", stringParam(effective, "question", "Проверьте данные"));
+        task.put("question", stringParam(effective, "question", "Please review the data"));
         task.put("payload", payload);
         task.put("resumeKey", resumeKey);
         List<String> options = listParam(effective, "options");

@@ -7,8 +7,8 @@ import io.provisionlabs.agentsgraph.engine.Processor;
 import java.util.Map;
 
 /**
- * Ничего не делает. Для edges, чья роль - только роутинг/теги: например терминальный edge
- * review-ветки, который добавляет тег {@code review_pending} (edge обязан иметь хотя бы один шаг).
+ * Does nothing. For edges whose only job is routing/tags - e.g. the terminal edge of the review
+ * branch that adds the {@code review_pending} tag (an edge must have at least one step).
  */
 public final class NoopProcessor implements Processor {
 
