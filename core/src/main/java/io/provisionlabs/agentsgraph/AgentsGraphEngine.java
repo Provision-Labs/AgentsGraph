@@ -17,6 +17,7 @@ import io.provisionlabs.agentsgraph.engine.NoopOutputSink;
 import io.provisionlabs.agentsgraph.engine.OutputSink;
 import io.provisionlabs.agentsgraph.engine.Processor;
 import io.provisionlabs.agentsgraph.engine.ProcessorHealthMonitor;
+import io.provisionlabs.agentsgraph.engine.ProcessorInstantiator;
 import io.provisionlabs.agentsgraph.engine.ProcessorLoader;
 import io.provisionlabs.agentsgraph.engine.ProcessorRegistry;
 import io.provisionlabs.agentsgraph.engine.RoutingDelegate;
@@ -76,6 +77,7 @@ public final class AgentsGraphEngine {
     private final RuntimeOrchestrator orchestrator;
     private final ControlPlane controlPlane;
     private final Map<String, Processor> programmaticProcessors = new ConcurrentHashMap<>();
+    private volatile ProcessorInstantiator processorInstantiator = ProcessorInstantiator.REFLECTIVE;
     private final Object loadLock = new Object();
     private volatile boolean loaded;
     private volatile ProcessorHealthMonitor healthMonitor =
@@ -153,11 +155,29 @@ public final class AgentsGraphEngine {
     }
 
     /**
-     * Reflectively instantiates and registers every {@link ProcessorDefinition} (e.g. loaded from
-     * a {@code ProcessorDefinitionStore}), and refreshes the engine's {@link ProcessorHealthMonitor}.
+     * How DB rows become processor objects. The default creates {@code instance_class} through its
+     * no-arg constructor; an application plugs in its DI container here (e.g. Spring's
+     * {@code autowireBean} after construction) so that processors with live dependencies are
+     * ordinary rows too and no per-processor beans are needed - see {@link ProcessorInstantiator}.
+     * Set before the first {@link #execute}/{@link #reload}; a later change applies on the next
+     * {@link #reload()}. {@code null} restores the reflective default.
+     */
+    public void setProcessorInstantiator(ProcessorInstantiator processorInstantiator) {
+        this.processorInstantiator = processorInstantiator == null
+                ? ProcessorInstantiator.REFLECTIVE : processorInstantiator;
+    }
+
+    public ProcessorInstantiator getProcessorInstantiator() {
+        return processorInstantiator;
+    }
+
+    /**
+     * Instantiates (via the {@link #setProcessorInstantiator configured} {@link ProcessorInstantiator})
+     * and registers every {@link ProcessorDefinition} (e.g. loaded from a
+     * {@code ProcessorDefinitionStore}), and refreshes the engine's {@link ProcessorHealthMonitor}.
      */
     public ProcessorLoader.LoadResult loadProcessors(List<ProcessorDefinition> definitions) {
-        ProcessorLoader.LoadResult result = new ProcessorLoader(processorRegistry).load(definitions);
+        ProcessorLoader.LoadResult result = new ProcessorLoader(processorRegistry, processorInstantiator).load(definitions);
         this.healthMonitor = new ProcessorHealthMonitor(result);
         return result;
     }

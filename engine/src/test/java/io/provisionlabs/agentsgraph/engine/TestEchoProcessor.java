@@ -13,12 +13,19 @@ import java.util.Map;
 public class TestEchoProcessor implements Processor {
 
     private Map<String, Object> initParams;
+    /** Set by a custom {@link ProcessorInstantiator} in tests - stands in for an injected dependency. */
+    private String dependency;
+
+    public void setDependency(String dependency) {
+        this.dependency = dependency;
+    }
 
     @Override
     public Map<String, Object> execute(ExecutionContext context, StepDefinition step) {
         Map<String, Object> out = new HashMap<>();
         out.put("initParams", initParams);
         out.put("stepId", step.getId());
+        out.put("dependency", dependency);
         return out;
     }
 

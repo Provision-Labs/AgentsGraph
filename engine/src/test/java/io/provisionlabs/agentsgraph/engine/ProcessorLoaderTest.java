@@ -47,6 +47,46 @@ class ProcessorLoaderTest {
     }
 
     @Test
+    void customInstantiatorInjectsDependenciesAfterConstructionAndBeforeInit() {
+        ProcessorRegistry registry = new ProcessorRegistry();
+        // the shape a Spring wiring takes: reflective construction, then autowireBean(instance)
+        ProcessorInstantiator wiring = ProcessorInstantiator.REFLECTIVE.andThen(instance -> {
+            ((TestEchoProcessor) instance).setDependency("wired");
+            return instance;
+        });
+        ProcessorLoader loader = new ProcessorLoader(registry, wiring);
+
+        ProcessorLoader.LoadResult result = loader.load(List.of(new ProcessorDefinition(
+                "echo", "Echo", false, TestEchoProcessor.class.getName(), Map.of("k", "v"))));
+
+        assertThat(result.getFailures()).isEmpty();
+        Map<String, Object> out = registry.resolve("echo").execute(
+                io.provisionlabs.agentsgraph.context.ExecutionContext.newFlow(Map.of(), Map.of()),
+                new io.provisionlabs.agentsgraph.config.StepDefinition("s1", "echo", Map.of()));
+        assertThat(out).containsEntry("dependency", "wired").containsEntry("initParams", Map.of("k", "v"));
+    }
+
+    @Test
+    void instantiatorFailureIsIsolatedLikeAMissingClass() {
+        ProcessorRegistry registry = new ProcessorRegistry();
+        ProcessorInstantiator failing = definition -> {
+            if ("broken".equals(definition.getId())) {
+                throw new IllegalStateException("no bean for " + definition.getInstanceClass());
+            }
+            return ProcessorInstantiator.REFLECTIVE.instantiate(definition);
+        };
+        ProcessorLoader loader = new ProcessorLoader(registry, failing);
+
+        ProcessorLoader.LoadResult result = loader.load(List.of(
+                new ProcessorDefinition("broken", "Broken", false, TestEchoProcessor.class.getName(), Map.of()),
+                new ProcessorDefinition("echo", "Echo", false, TestEchoProcessor.class.getName(), Map.of())));
+
+        assertThat(result.getFailures()).extracting(ProcessorLoader.LoadFailure::getProcessorId).containsExactly("broken");
+        assertThat(result.getFailures().get(0).getReason()).contains("no bean for");
+        assertThat(result.getLoaded()).containsOnlyKeys("echo");
+    }
+
+    @Test
     void healthMonitorTreatsExternalAndInternalProcessorsDifferently() {
         ProcessorRegistry registry = new ProcessorRegistry();
         ProcessorLoader loader = new ProcessorLoader(registry);

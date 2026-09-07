@@ -8,17 +8,24 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Reflectively instantiates and registers {@link Processor}s described by {@link ProcessorDefinition}s
- * (e.g. loaded from {@code agentsgraph_processor} rows): {@code instance_class} is loaded via its
- * no-arg constructor, {@link Processor#init(Map)} is called with {@code params}, and the instance
- * is registered under the definition's {@code id}.
+ * Instantiates and registers {@link Processor}s described by {@link ProcessorDefinition}s (e.g.
+ * loaded from {@code agentsgraph_processor} rows): the instance is created by a
+ * {@link ProcessorInstantiator} ({@code instance_class} via its no-arg constructor by default, or
+ * an application-supplied strategy that also injects dependencies), {@link Processor#init(Map)} is
+ * called with {@code params}, and the instance is registered under the definition's {@code id}.
  */
 public final class ProcessorLoader {
 
     private final ProcessorRegistry registry;
+    private final ProcessorInstantiator instantiator;
 
     public ProcessorLoader(ProcessorRegistry registry) {
+        this(registry, ProcessorInstantiator.REFLECTIVE);
+    }
+
+    public ProcessorLoader(ProcessorRegistry registry, ProcessorInstantiator instantiator) {
         this.registry = registry;
+        this.instantiator = instantiator == null ? ProcessorInstantiator.REFLECTIVE : instantiator;
     }
 
     /**
@@ -34,8 +41,7 @@ public final class ProcessorLoader {
 
         for (ProcessorDefinition definition : definitions) {
             try {
-                Class<?> clazz = Class.forName(definition.getInstanceClass());
-                Object instance = clazz.getDeclaredConstructor().newInstance();
+                Object instance = instantiator.instantiate(definition);
                 if (!(instance instanceof Processor)) {
                     failures.add(new LoadFailure(definition.getId(),
                             "Class " + definition.getInstanceClass() + " does not implement Processor"));
@@ -49,7 +55,7 @@ public final class ProcessorLoader {
                 if (definition.isExternal()) {
                     externalIds.add(definition.getId());
                 }
-            } catch (ReflectiveOperationException | RuntimeException e) {
+            } catch (Exception e) {
                 failures.add(new LoadFailure(definition.getId(), String.valueOf(e.getMessage())));
             }
         }

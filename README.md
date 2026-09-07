@@ -128,10 +128,14 @@ for a delegate-routed one):
   H2-portable copy exercised by `SqlFixtureConfigStoreTest`. `JdbcTraceStore` persists
   status/tags/telemetry durably; the full per-node context-snapshot audit log stays in an
   in-process cache (see its Javadoc for the rationale).
-- **`ProcessorLoader`** (`engine`) reflectively instantiates each `ProcessorDefinition`'s
-  `instanceClass` via its no-arg constructor, calls `Processor.init(params)`, and registers it
-  into a `ProcessorRegistry`. Failures are isolated per-processor rather than aborting the whole
-  batch. `ProcessorHealthMonitor` reports liveness for processors flagged `is_external`.
+- **`ProcessorLoader`** (`engine`) instantiates each `ProcessorDefinition` through a
+  `ProcessorInstantiator` (by default `instanceClass` via its no-arg constructor), calls
+  `Processor.init(params)`, and registers it into a `ProcessorRegistry`. Failures are isolated
+  per-processor rather than aborting the whole batch. `ProcessorHealthMonitor` reports liveness
+  for processors flagged `is_external`. An application plugs its DI container into the
+  instantiator (`engine.setProcessorInstantiator(ProcessorInstantiator.REFLECTIVE.andThen(
+  beanFactory::autowireBean))`-style) so processors with live dependencies are ordinary DB rows
+  too - no per-processor beans.
 - **`output_to_next` / `output_to_save`** on each step control per-step data flow inside an
   `Edge`: `output_to_next` threads selected keys into the next step (empty/absent forwards
   everything); `output_to_save` is opt-in and collects keys into `EdgeResult.getSavedOutputs()` for
@@ -143,11 +147,12 @@ for a delegate-routed one):
   `execute(graphId, context)` and again on demand via `reload()` (a changed
   `agentsgraph_processor` row takes effect after a reload; a changed `agentsgraph_graph_config`
   row takes effect on the very next execution, no reload needed, since the orchestrator resolves
-  the graph from the `ConfigStore` per run). Processors registered via
-  `engine.registerProcessor(ref, processor)` - the ones needing live, injected dependencies that
-  can't be reflectively instantiated from a DB row - are pinned: re-applied after every load,
-  overriding same-ref DB rows (an optional constructor overload takes them as a map, convenient
-  for a declarative Spring `<map>`); tests reuse that same seam to overlay mock processors.
+  the graph from the `ConfigStore` per run). Processors with live dependencies load from rows
+  like any other once a `ProcessorInstantiator` that knows the DI container is set on the engine
+  (`setProcessorInstantiator`). Processors registered via `engine.registerProcessor(ref,
+  processor)` remain available and are pinned: re-applied after every load, overriding same-ref
+  DB rows (an optional constructor overload takes them as a map); tests use that seam to overlay
+  mock processors over SQL-seeded ones.
 
 ## ⚡ Synchronous & Asynchronous Execution
 
