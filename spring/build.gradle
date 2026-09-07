@@ -1,0 +1,19 @@
+description = 'AgentsGraph :: Spring integration - ProcessorInstantiator that wires processor rows from a Spring ApplicationContext'
+
+// Spring Framework 6 requires Java 17 - like admin-server, only this module leaves the parent's
+// Java 11 baseline; the framework's own layers stay on 11.
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+dependencies {
+    api project(':engine')
+
+    // compileOnly on purpose: the consuming application already has its own Spring (5.3+ or 6.x
+    // - the beans/context APIs used here are identical), and this module must not drag a
+    // particular Spring version into it.
+    compileOnly "org.springframework:spring-context:${rootProject.ext.springVersion}"
+
+    testImplementation "org.springframework:spring-context:${rootProject.ext.springVersion}"
+}

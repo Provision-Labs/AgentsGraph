@@ -59,6 +59,7 @@ architecture above. Each layer lives in its own module so it can be depended on 
 | `control` | Control Plane & Analytics | Query/replay API (`ControlPlane`) built on top of the trace store, backing `GET /executions` and replay/debug use cases, plus `GraphClassifier`/`TemplateGraphClassifier` for picking which graph should handle a given input. | `trace`, `context`, `config` |
 | `core` | Facade | `AgentsGraphEngine` — a single entry point that deploys graphs, loads/reloads processors from the DB, runs flows (sync/async) and classifies inputs across all five layers. Constructed from `ConfigStore`/`ProcessorDefinitionStore`/`TraceStore` *implementations* — it never touches a `DataSource` or any other storage detail itself; each JDBC store ensures its own schema on construction. | all of the above |
 | `interaction` | Human-in-the-Loop | `InteractionService`, `HumanTask`/`ResponseSchema`/`HumanTaskDecision`, the `HumanTaskAdapter` delivery SPI and the `human-review`/`noop` processors — turns completed review-branch flows into tasks for humans and human answers into pipeline continuations via `resumeFrom`. The engine itself knows nothing about humans; see [Human-in-the-Loop](#-human-in-the-loop-hitl). | `core` |
+| `spring` | Spring integration | `SpringProcessorInstantiator` - a `ProcessorInstantiator` over a Spring `ApplicationContext`: processor rows whose classes need live dependencies get their `@Autowired` / `@Qualifier` / `@Value` fields filled from the context (`bean:name` hands over an existing bean), so no per-processor beans are needed. Java 17, Spring as `compileOnly` - the application brings its own. | `engine` |
 | `test` | Test kit | `AgentsGraphTestHarness`, `MockProcessor` and `SqlScriptRunner` — run a real graph (deployed by the same SQL script production uses) with selected processors replaced by scripted mocks, so tests exercise routing/threading/fallback/tracing with zero network calls and zero AI-API token spend. | `core` |
 | `admin-server` | Admin API server | One module, three hats: the REST backend of the [AgentsGraph UI](https://github.com/Provision-Labs/agentsgraph-ui) (`AgentsGraphAdminService`/`AgentsGraphAdminController` - graphs, processors, execution traces, debug step traces with parsed in/out, resume-from-step), Spring Boot auto-configuration (add the jar to any Boot 3 app with a `DataSource` - every bean is `@ConditionalOnMissingBean`), and a runnable server (`./gradlew :admin-server:bootRun`). Java 17 / Spring Boot 3. | `core` |
 
@@ -133,9 +134,9 @@ for a delegate-routed one):
   `Processor.init(params)`, and registers it into a `ProcessorRegistry`. Failures are isolated
   per-processor rather than aborting the whole batch. `ProcessorHealthMonitor` reports liveness
   for processors flagged `is_external`. An application plugs its DI container into the
-  instantiator (`engine.setProcessorInstantiator(ProcessorInstantiator.REFLECTIVE.andThen(
-  beanFactory::autowireBean))`-style) so processors with live dependencies are ordinary DB rows
-  too - no per-processor beans.
+  instantiator (`engine.setProcessorInstantiator(...)`) so processors with live dependencies are
+  ordinary DB rows too - no per-processor beans; for Spring that is the ready-made
+  `SpringProcessorInstantiator` from the `spring` module.
 - **`output_to_next` / `output_to_save`** on each step control per-step data flow inside an
   `Edge`: `output_to_next` threads selected keys into the next step (empty/absent forwards
   everything); `output_to_save` is opt-in and collects keys into `EdgeResult.getSavedOutputs()` for
