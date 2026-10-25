@@ -4,6 +4,7 @@ import io.provisionlabs.agentsgraph.config.ConfigStore;
 import io.provisionlabs.agentsgraph.config.EdgeDefinition;
 import io.provisionlabs.agentsgraph.config.GraphDefinition;
 import io.provisionlabs.agentsgraph.config.NodeDefinition;
+import io.provisionlabs.agentsgraph.config.Placeholders;
 import io.provisionlabs.agentsgraph.config.StepDefinition;
 import io.provisionlabs.agentsgraph.context.ExecutionContext;
 import io.provisionlabs.agentsgraph.trace.ContextJsonCodec;
@@ -77,6 +78,7 @@ public final class RuntimeOrchestrator {
     private final Executor asyncExecutor;
     private final ConditionEngine conditionEngine = new ConditionEngine();
     private final ContextJsonCodec contextCodec = new ContextJsonCodec();
+    private volatile Placeholders placeholders = Placeholders.environment();
 
     public RuntimeOrchestrator(ConfigStore configStore, TraceStore traceStore,
                                 ProcessorRegistry processorRegistry, RoutingDelegateRegistry delegateRegistry) {
@@ -93,6 +95,15 @@ public final class RuntimeOrchestrator {
         this.delegateRegistry = Objects.requireNonNull(delegateRegistry, "delegateRegistry");
         this.outputSink = Objects.requireNonNull(outputSink, "outputSink");
         this.asyncExecutor = Objects.requireNonNull(asyncExecutor, "asyncExecutor");
+    }
+
+    /** Resolves {@code ${{NAME}}} in step params; {@code null} restores environment variables + system properties. */
+    public void setPlaceholders(Placeholders placeholders) {
+        this.placeholders = placeholders == null ? Placeholders.environment() : placeholders;
+    }
+
+    public Placeholders getPlaceholders() {
+        return placeholders;
     }
 
     /** Runs {@code graphId} from its entry node to completion, returning the final context snapshot. */
@@ -195,7 +206,7 @@ public final class RuntimeOrchestrator {
                 }
 
                 EdgeDefinition edgeDefinition = graph.getEdge(decision.getNextEdgeId());
-                Edge edge = new Edge(edgeDefinition, processorRegistry);
+                Edge edge = new Edge(edgeDefinition, processorRegistry, placeholders);
 
                 // Act: run the selected edge's pipeline, falling back to fallback_edge_id (if set)
                 // rather than aborting the flow when the edge's own step pipeline throws.
@@ -213,7 +224,7 @@ public final class RuntimeOrchestrator {
                     traceStore.recordError(initialContext.getFlowId(), stackTraceOf(stepFailure));
                     fellBack = true;
                     edgeDefinition = graph.getEdge(fallbackEdgeId);
-                    edge = new Edge(edgeDefinition, processorRegistry);
+                    edge = new Edge(edgeDefinition, processorRegistry, placeholders);
                     context = context.withMergedState(Map.of("pipeline_error", String.valueOf(stepFailure.getMessage())));
                     decision = new RoutingDecision(fallbackEdgeId, 0.0, RoutingSource.FALLBACK);
                     edgeResult = edge.execute(context, nodeDefinition.getId(), tracer);

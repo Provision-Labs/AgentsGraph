@@ -1,5 +1,6 @@
 package io.provisionlabs.agentsgraph;
 
+import io.provisionlabs.agentsgraph.config.Placeholders;
 import io.provisionlabs.agentsgraph.config.ConfigStore;
 import io.provisionlabs.agentsgraph.config.GraphDefinition;
 import io.provisionlabs.agentsgraph.config.InMemoryConfigStore;
@@ -78,6 +79,8 @@ public final class AgentsGraphEngine {
     private final ControlPlane controlPlane;
     private final Map<String, Processor> programmaticProcessors = new ConcurrentHashMap<>();
     private volatile ProcessorInstantiator processorInstantiator = ProcessorInstantiator.REFLECTIVE;
+    private volatile Placeholders placeholders = Placeholders.environment();
+    private volatile ProcessorLoader.LoadResult lastLoadResult = ProcessorLoader.LoadResult.EMPTY;
     private final Object loadLock = new Object();
     private volatile boolean loaded;
     private volatile ProcessorHealthMonitor healthMonitor =
@@ -172,13 +175,35 @@ public final class AgentsGraphEngine {
     }
 
     /**
+     * Where {@code ${{NAME}}} / {@code ${{NAME:default}}} in processor and step params take their values from:
+     * environment variables and system properties by default, the application's settings too with the
+     * {@code spring} module ({@code SpringPlaceholders}). Processor params pick a change up on the next
+     * {@link #reload()}, step params on the next step run. {@code null} restores the default.
+     */
+    public void setPlaceholders(Placeholders placeholders) {
+        this.placeholders = placeholders == null ? Placeholders.environment() : placeholders;
+        orchestrator.setPlaceholders(this.placeholders);
+    }
+
+    public Placeholders getPlaceholders() {
+        return placeholders;
+    }
+
+    /** Result of the latest processor load: loaded processors and the rows that failed, with reasons. */
+    public ProcessorLoader.LoadResult getLastLoadResult() {
+        return lastLoadResult;
+    }
+
+    /**
      * Instantiates (via the {@link #setProcessorInstantiator configured} {@link ProcessorInstantiator})
      * and registers every {@link ProcessorDefinition} (e.g. loaded from a
      * {@code ProcessorDefinitionStore}), and refreshes the engine's {@link ProcessorHealthMonitor}.
      */
     public ProcessorLoader.LoadResult loadProcessors(List<ProcessorDefinition> definitions) {
-        ProcessorLoader.LoadResult result = new ProcessorLoader(processorRegistry, processorInstantiator).load(definitions);
+        ProcessorLoader.LoadResult result =
+                new ProcessorLoader(processorRegistry, processorInstantiator, placeholders).load(definitions);
         this.healthMonitor = new ProcessorHealthMonitor(result);
+        this.lastLoadResult = result;
         return result;
     }
 

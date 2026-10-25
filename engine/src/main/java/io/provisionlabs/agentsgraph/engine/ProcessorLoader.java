@@ -1,5 +1,6 @@
 package io.provisionlabs.agentsgraph.engine;
 
+import io.provisionlabs.agentsgraph.config.Placeholders;
 import io.provisionlabs.agentsgraph.config.ProcessorDefinition;
 
 import java.util.ArrayList;
@@ -13,19 +14,27 @@ import java.util.Map;
  * {@link ProcessorInstantiator} ({@code instance_class} via its no-arg constructor by default, or
  * an application-supplied strategy that also injects dependencies), {@link Processor#init(Map)} is
  * called with {@code params}, and the instance is registered under the definition's {@code id}.
+ * Placeholders in the params ({@code ${{OCR_SERVER}}}, {@code ${{LLM_SERVER:http://...}}}) are resolved by
+ * {@link Placeholders} first; one that resolves to nothing fails that definition only.
  */
 public final class ProcessorLoader {
 
     private final ProcessorRegistry registry;
     private final ProcessorInstantiator instantiator;
+    private final Placeholders placeholders;
 
     public ProcessorLoader(ProcessorRegistry registry) {
         this(registry, ProcessorInstantiator.REFLECTIVE);
     }
 
     public ProcessorLoader(ProcessorRegistry registry, ProcessorInstantiator instantiator) {
+        this(registry, instantiator, Placeholders.environment());
+    }
+
+    public ProcessorLoader(ProcessorRegistry registry, ProcessorInstantiator instantiator, Placeholders placeholders) {
         this.registry = registry;
         this.instantiator = instantiator == null ? ProcessorInstantiator.REFLECTIVE : instantiator;
+        this.placeholders = placeholders == null ? Placeholders.environment() : placeholders;
     }
 
     /**
@@ -41,6 +50,8 @@ public final class ProcessorLoader {
 
         for (ProcessorDefinition definition : definitions) {
             try {
+                // before instantiation: a row whose placeholder has no value is not created at all
+                Map<String, Object> params = placeholders.resolveParams(definition.getParams());
                 Object instance = instantiator.instantiate(definition);
                 if (!(instance instanceof Processor)) {
                     failures.add(new LoadFailure(definition.getId(),
@@ -49,7 +60,7 @@ public final class ProcessorLoader {
                 }
 
                 Processor processor = (Processor) instance;
-                processor.init(definition.getParams());
+                processor.init(params);
                 registry.register(definition.getId(), processor);
                 loaded.put(definition.getId(), processor);
                 if (definition.isExternal()) {

@@ -1,6 +1,7 @@
 package io.provisionlabs.agentsgraph.engine;
 
 import io.provisionlabs.agentsgraph.config.EdgeDefinition;
+import io.provisionlabs.agentsgraph.config.Placeholders;
 import io.provisionlabs.agentsgraph.config.StepDefinition;
 import io.provisionlabs.agentsgraph.context.ExecutionContext;
 
@@ -31,10 +32,17 @@ public final class Edge {
 
     private final EdgeDefinition definition;
     private final ProcessorRegistry processorRegistry;
+    private final Placeholders placeholders;
 
     public Edge(EdgeDefinition definition, ProcessorRegistry processorRegistry) {
+        this(definition, processorRegistry, Placeholders.environment());
+    }
+
+    /** {@code placeholders} resolve {@code ${{NAME}}} in step params right before each step runs. */
+    public Edge(EdgeDefinition definition, ProcessorRegistry processorRegistry, Placeholders placeholders) {
         this.definition = definition;
         this.processorRegistry = processorRegistry;
+        this.placeholders = placeholders == null ? Placeholders.environment() : placeholders;
     }
 
     public EdgeDefinition getDefinition() {
@@ -80,7 +88,8 @@ public final class Edge {
             long startNanos = System.nanoTime();
             Map<String, Object> stepOutput;
             try {
-                stepOutput = processor.execute(stepContext, step);
+                // the trace keeps the step as written; the processor gets its params resolved
+                stepOutput = processor.execute(stepContext, placeholders.resolveStep(step));
             } catch (RuntimeException e) {
                 tracer.stepFailed(nodeId, definition, step, i, stepContext, e, startedAt, elapsedMs(startNanos));
                 throw new AgentsGraphException(

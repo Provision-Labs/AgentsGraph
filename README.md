@@ -154,6 +154,18 @@ for a delegate-routed one):
   processor)` remain available and are pinned: re-applied after every load, overriding same-ref
   DB rows (an optional constructor overload takes them as a map); tests use that seam to overlay
   mock processors over SQL-seeded ones.
+- **Placeholders `${{NAME}}` / `${{NAME:default}}`** (since 0.6.5) in processor `params` and step
+  `params` point a deployment's graphs at its own servers without rewriting rows:
+  `"processUrl": "${{OCR_SERVER:http://10.64.0.39:8191}}/processing/{template}"`. The value is the first
+  non-blank one among the sources - environment variables of the container, then JVM system properties
+  (`Placeholders.environment()`, the default); with the `spring` module, `SpringPlaceholders.create(environment)`
+  puts the application's settings (`application.yml`, any property source) after the environment variables -
+  otherwise the default after the first colon (it may itself be a URL). Processor params are resolved before
+  `init` (`ProcessorLoader`; a placeholder with no value fails that row only, the reason names it), step params
+  right before the step runs (`Edge`; the trace keeps the step as written). Single-brace templates such as
+  `{template}` and Spring's `${...}` are left alone. `engine.setPlaceholders(...)` sets the sources;
+  `Placeholders.describe(params)` lists each placeholder with its value and origin (`environment`, `settings`,
+  `default`, `missing`) for admin screens, `engine.getLastLoadResult()` gives the failed rows with reasons.
 
 ## ⚡ Synchronous & Asynchronous Execution
 
