@@ -189,6 +189,20 @@ public final class AgentsGraphEngine {
         return placeholders;
     }
 
+    /**
+     * Host-wide step observer: asked for a {@link io.provisionlabs.agentsgraph.engine.StepTracer} at the start
+     * of every run - {@code execute}/{@code executeAsync} and also {@link #resumeFrom} and human-task
+     * completions, which take no per-call listener. Composed after the engine's own recording and before the
+     * per-call listener. {@code null} removes it.
+     */
+    public void setFlowTracerFactory(io.provisionlabs.agentsgraph.engine.FlowTracerFactory flowTracers) {
+        orchestrator.setFlowTracerFactory(flowTracers);
+    }
+
+    public io.provisionlabs.agentsgraph.engine.FlowTracerFactory getFlowTracerFactory() {
+        return orchestrator.getFlowTracerFactory();
+    }
+
     /** Result of the latest processor load: loaded processors and the rows that failed, with reasons. */
     public ProcessorLoader.LoadResult getLastLoadResult() {
         return lastLoadResult;

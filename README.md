@@ -166,6 +166,10 @@ for a delegate-routed one):
   `{template}` and Spring's `${...}` are left alone. `engine.setPlaceholders(...)` sets the sources;
   `Placeholders.describe(params)` lists each placeholder with its value and origin (`environment`, `settings`,
   `default`, `missing`) for admin screens, `engine.getLastLoadResult()` gives the failed rows with reasons.
+- **Host-wide step observer** (since 0.6.6): `engine.setFlowTracerFactory((graph, initialContext) -> tracer)` is
+  asked for a `StepTracer` at the start of every run - `execute`/`executeAsync` and also `resumeFrom` and
+  human-task completions, which take no per-call listener. Use it for failure logging with the flow's identity
+  or for keeping the steps of failed runs; a factory that throws or returns `null` leaves the run unobserved.
 
 ## ⚡ Synchronous & Asynchronous Execution
 

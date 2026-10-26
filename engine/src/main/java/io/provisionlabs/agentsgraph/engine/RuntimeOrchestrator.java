@@ -79,6 +79,7 @@ public final class RuntimeOrchestrator {
     private final ConditionEngine conditionEngine = new ConditionEngine();
     private final ContextJsonCodec contextCodec = new ContextJsonCodec();
     private volatile Placeholders placeholders = Placeholders.environment();
+    private volatile FlowTracerFactory flowTracers = FlowTracerFactory.NONE;
 
     public RuntimeOrchestrator(ConfigStore configStore, TraceStore traceStore,
                                 ProcessorRegistry processorRegistry, RoutingDelegateRegistry delegateRegistry) {
@@ -104,6 +105,18 @@ public final class RuntimeOrchestrator {
 
     public Placeholders getPlaceholders() {
         return placeholders;
+    }
+
+    /**
+     * Host-wide step observer asked for a tracer at the start of every run, resumes included (see
+     * {@link FlowTracerFactory}); {@code null} removes it.
+     */
+    public void setFlowTracerFactory(FlowTracerFactory flowTracers) {
+        this.flowTracers = flowTracers == null ? FlowTracerFactory.NONE : flowTracers;
+    }
+
+    public FlowTracerFactory getFlowTracerFactory() {
+        return flowTracers;
     }
 
     /** Runs {@code graphId} from its entry node to completion, returning the final context snapshot. */
@@ -152,7 +165,9 @@ public final class RuntimeOrchestrator {
         String tenantId = String.valueOf(initialContext.getMetadata().get("tenant_id"));
         traceStore.startFlow(initialContext.getFlowId(), tenantId);
         long flowStartMillis = System.currentTimeMillis();
-        StepTracer tracer = StepTracer.compose(stepTracerFor(graph, initialContext), progressListener);
+        StepTracer tracer = StepTracer.compose(
+                StepTracer.compose(stepTracerFor(graph, initialContext), hostTracerFor(graph, initialContext)),
+                progressListener);
 
         ExecutionContext context = initialContext;
         String currentNodeId = resume != null ? resume.nodeId : graph.getEntryNodeId();
@@ -278,6 +293,18 @@ public final class RuntimeOrchestrator {
                     initialContext.getFlowId(), graph.getId(), graph.getVersion(), true);
         }
         return StepTracer.NOOP;
+    }
+
+    /** The host's tracer for this run; a factory failure must not stop the flow - it just isn't observed. */
+    private StepTracer hostTracerFor(GraphDefinition graph, ExecutionContext initialContext) {
+        try {
+            StepTracer tracer = flowTracers.forFlow(graph, initialContext);
+            return tracer == null ? StepTracer.NOOP : tracer;
+        } catch (RuntimeException e) {
+            log.warn("Flow tracer factory failed for flow '{}' (graph '{}') - run continues unobserved",
+                    initialContext.getFlowId(), graph.getId(), e);
+            return StepTracer.NOOP;
+        }
     }
 
     private static boolean hasSnapshotSteps(GraphDefinition graph) {
