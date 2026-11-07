@@ -71,7 +71,7 @@ public final class AgentsGraphEngine {
     private final ConfigStore configStore;
     private final ProcessorDefinitionStore processorDefinitionStore;
     private final TraceStore traceStore;
-    private final ContextJsonCodec contextCodec = new ContextJsonCodec();
+    private volatile ContextJsonCodec contextCodec = new ContextJsonCodec();
     private final ProcessorRegistry processorRegistry;
     private final RoutingDelegateRegistry delegateRegistry;
     private final OutputSink outputSink;
@@ -201,6 +201,24 @@ public final class AgentsGraphEngine {
 
     public io.provisionlabs.agentsgraph.engine.FlowTracerFactory getFlowTracerFactory() {
         return orchestrator.getFlowTracerFactory();
+    }
+
+    /**
+     * The codec behind step snapshots ({@code "snapshot": true} steps and debug mode). The default
+     * caps every single context value at {@link ContextJsonCodec#DEFAULT_MAX_VALUE_BYTES} (1 MB):
+     * a flow carrying a bigger value - e.g. a multi-megabyte OCR JSON on its way to a human-review
+     * step - gets that value truncated in the snapshot, and the flow becomes non-restartable
+     * ("... is not restartable: its input snapshot dropped or truncated a value" on
+     * {@code resumeFrom}/human-task completion). Hosts with large payloads install a codec with a
+     * raised cap here. {@code null} restores the default.
+     */
+    public void setContextCodec(ContextJsonCodec contextCodec) {
+        this.contextCodec = contextCodec == null ? new ContextJsonCodec() : contextCodec;
+        orchestrator.setContextCodec(this.contextCodec);
+    }
+
+    public ContextJsonCodec getContextCodec() {
+        return contextCodec;
     }
 
     /** Result of the latest processor load: loaded processors and the rows that failed, with reasons. */

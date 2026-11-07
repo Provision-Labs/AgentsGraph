@@ -77,7 +77,7 @@ public final class RuntimeOrchestrator {
     private final OutputSink outputSink;
     private final Executor asyncExecutor;
     private final ConditionEngine conditionEngine = new ConditionEngine();
-    private final ContextJsonCodec contextCodec = new ContextJsonCodec();
+    private volatile ContextJsonCodec contextCodec = new ContextJsonCodec();
     private volatile Placeholders placeholders = Placeholders.environment();
     private volatile FlowTracerFactory flowTracers = FlowTracerFactory.NONE;
 
@@ -105,6 +105,21 @@ public final class RuntimeOrchestrator {
 
     public Placeholders getPlaceholders() {
         return placeholders;
+    }
+
+    /**
+     * The codec that serializes step snapshots ({@code "snapshot": true} steps and debug mode).
+     * The default caps every single context value at {@link ContextJsonCodec#DEFAULT_MAX_VALUE_BYTES};
+     * a flow carrying a bigger value (a multi-megabyte OCR JSON on its way to a human-review step)
+     * would get that value truncated in the snapshot and become non-restartable. Hosts with large
+     * payloads install a codec with a raised cap here; {@code null} restores the default.
+     */
+    public void setContextCodec(ContextJsonCodec contextCodec) {
+        this.contextCodec = contextCodec == null ? new ContextJsonCodec() : contextCodec;
+    }
+
+    public ContextJsonCodec getContextCodec() {
+        return contextCodec;
     }
 
     /**

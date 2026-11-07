@@ -7,6 +7,7 @@ import io.provisionlabs.agentsgraph.config.NodeDefinition;
 import io.provisionlabs.agentsgraph.config.RoutingStrategy;
 import io.provisionlabs.agentsgraph.config.StepDefinition;
 import io.provisionlabs.agentsgraph.context.ExecutionContext;
+import io.provisionlabs.agentsgraph.trace.ContextJsonCodec;
 import io.provisionlabs.agentsgraph.trace.StepTraceRecord;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -203,5 +204,42 @@ class InteractionHumanReviewFlowTest {
 
         // the invariant under test here: tasks that are not overdue are left untouched
         assertThat(interaction.pendingTask(task.getTaskId())).isPresent();
+    }
+
+    /**
+     * LIVE CASE: a multi-megabyte OCR JSON on its way to the human-review step overran the default
+     * 1 MB per-value snapshot cap - the snapshot stored a truncation marker, and "continue" failed
+     * with "... is not restartable: its input snapshot dropped or truncated a value". The host
+     * raises the cap via {@link AgentsGraphEngine#setContextCodec} and the resume works.
+     */
+    @Test
+    void snapshotStaysRestartableForLargeValuesWhenTheCodecLimitIsRaised() {
+        String bigJson = "{\"text\":\"" + "ж".repeat(2_000_000) + "\"}"; // ~4 MB UTF-8
+        engine.registerProcessor("llm", (context, step) ->
+                Map.of("summary", "LEN(" + String.valueOf(context.getInputData().get("ocrJson")).length() + ")"));
+
+        // Default codec (1 MB per value): the snapshot truncates the value, the review step is lost.
+        ExecutionContext pending = engine.execute("doc-flow",
+                ExecutionContext.newFlow(Map.of("prob", 0.42, "ocrJson", bigJson), Map.of()));
+        List<StepTraceRecord> traces = engine.getStepTraces(pending.getFlowId());
+        assertThat(traces).hasSize(1);
+        assertThat(traces.get(0).isRestartable()).isFalse();
+
+        // Raised cap: the same flow snapshots the value whole and resumes on it.
+        engine.setContextCodec(new ContextJsonCodec(16 * 1024 * 1024));
+        ExecutionContext pending2 = engine.execute("doc-flow",
+                ExecutionContext.newFlow(Map.of("prob", 0.42, "ocrJson", bigJson), Map.of()));
+        StepTraceRecord reviewStep = engine.getStepTraces(pending2.getFlowId()).get(0);
+        assertThat(reviewStep.isRestartable()).isTrue();
+
+        interaction.publishNew();
+        HumanTask task = interaction.pending().stream()
+                .filter(t -> t.getTaskId().startsWith(pending2.getFlowId() + ":"))
+                .findFirst().orElseThrow();
+        ExecutionContext resumed = interaction.complete(task.getTaskId(),
+                new HumanTaskDecision(Map.of("fields", Map.of("doc_number", "ЦБ-999")), "operator"));
+
+        assertThat(resumed.getAccumulatedState().get("summary"))
+                .isEqualTo("LEN(" + bigJson.length() + ")");
     }
 }
