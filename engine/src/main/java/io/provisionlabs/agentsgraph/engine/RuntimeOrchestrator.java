@@ -255,7 +255,7 @@ public final class RuntimeOrchestrator {
                     fellBack = true;
                     edgeDefinition = graph.getEdge(fallbackEdgeId);
                     edge = new Edge(edgeDefinition, processorRegistry, placeholders);
-                    context = context.withMergedState(Map.of("pipeline_error", String.valueOf(stepFailure.getMessage())));
+                    context = context.withMergedState(Map.of("pipeline_error", failureMessage(stepFailure)));
                     decision = new RoutingDecision(fallbackEdgeId, 0.0, RoutingSource.FALLBACK);
                     edgeResult = edge.execute(context, nodeDefinition.getId(), tracer);
                 }
@@ -338,6 +338,26 @@ public final class RuntimeOrchestrator {
         StringWriter buffer = new StringWriter();
         failure.printStackTrace(new PrintWriter(buffer));
         return buffer.toString();
+    }
+
+    /**
+     * User-facing failure text for {@code pipeline_error}: the wrapper message
+     * ("Edge 'x' failed at step 'y'") plus the deepest cause's message when it adds information.
+     * Step processors put their user-readable explanation into the exception message (e.g.
+     * "Документ нечитаем: на страницах не найден текст...") - without the cause the fallback edge
+     * could only show the bare wrapper, and the actual reason never reached the user.
+     */
+    private static String failureMessage(Throwable failure) {
+        String message = String.valueOf(failure.getMessage());
+        Throwable cause = failure.getCause();
+        while (cause != null && cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        String causeMessage = cause == null ? null : cause.getMessage();
+        if (causeMessage == null || causeMessage.isBlank() || message.contains(causeMessage)) {
+            return message;
+        }
+        return message + ": " + causeMessage;
     }
 
     /** Asynchronous counterpart of {@link #run}, executed on this orchestrator's configured executor. */

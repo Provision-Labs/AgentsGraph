@@ -97,7 +97,10 @@ class RuntimeOrchestratorOutputMappingAndFallbackTest {
         // is that it's captured and handed to the fallback edge at all, not swallowed/thrown.
         assertThat(result.getAccumulatedState().get("answer"))
                 .asString()
-                .startsWith("Sorry, something went wrong: Edge 'edge_ocr' failed at step 's0'");
+                .startsWith("Sorry, something went wrong: Edge 'edge_ocr' failed at step 's0'")
+                // ...а теперь и с причиной шага: fallback-ответ пользователю должен называть
+                // причину («Документ нечитаем…» и т.п.), а не голый «Edge failed at step»
+                .contains("OCR service unavailable");
         // The flow finished via the fallback edge without propagating the exception, but it did
         // NOT complete its intended path - status is ERROR, with the failure's stack trace
         // (naming the failed edge/step and the root cause) recorded in the trace's error field.
